@@ -272,7 +272,7 @@ static struct kobj_attribute hotplug_disabled_attr = __ATTR_RO(hotplug_disable);
 
 unsigned int get_rq_info(void)
 {
-unsigned long flags = 0;
+	unsigned long flags = 0;
         unsigned int rq = 0;
 
         spin_lock_irqsave(&rq_lock, flags);
@@ -301,10 +301,7 @@ static void def_work_fn(struct work_struct *work)
 static ssize_t run_queue_avg_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
-#ifdef CONFIG_MSM_RUN_QUEUE_STATS_BE_CONSERVATIVE
-	int nr_running = (avg_nr_running() * 10) >> FSHIFT;
-	return snprintf(buf, PAGE_SIZE, "%d.%d\n", nr_running/10, nr_running%10);
-#else
+
 	unsigned int val = 0;
 	unsigned long flags = 0;
 
@@ -315,7 +312,6 @@ static ssize_t run_queue_avg_show(struct kobject *kobj,
 	spin_unlock_irqrestore(&rq_lock, flags);
 
 	return snprintf(buf, PAGE_SIZE, "%d.%d\n", val/10, val%10);
-#endif
 }
 
 static struct kobj_attribute run_queue_avg_attr = __ATTR_RO(run_queue_avg);
