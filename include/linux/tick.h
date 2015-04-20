@@ -92,7 +92,16 @@ extern struct cpumask *tick_get_broadcast_mask(void);
 #  ifdef CONFIG_TICK_ONESHOT
 extern struct cpumask *tick_get_broadcast_oneshot_mask(void);
 #  endif
+#else
+static inline struct tick_device *tick_get_broadcast_device(void)
+{
+	return NULL;
+}
 
+static inline struct cpumask *tick_get_broadcast_mask(void)
+{
+	return NULL;
+}
 # endif /* BROADCAST */
 
 # ifdef CONFIG_TICK_ONESHOT
@@ -109,6 +118,10 @@ static inline void tick_clock_notify(void) { }
 static inline int tick_check_oneshot_change(int allow_nohz) { return 0; }
 static inline void tick_check_idle(int cpu) { }
 static inline int tick_oneshot_mode_active(void) { return 0; }
+static inline struct cpumask *tick_get_broadcast_oneshot_mask(void)
+{
+	return NULL;
+}
 # endif
 
 #else /* CONFIG_GENERIC_CLOCKEVENTS */
@@ -140,11 +153,5 @@ static inline ktime_t tick_nohz_get_sleep_length(void)
 static inline u64 get_cpu_idle_time_us(int cpu, u64 *unused) { return -1; }
 static inline u64 get_cpu_iowait_time_us(int cpu, u64 *unused) { return -1; }
 # endif /* !NO_HZ */
-
-# ifdef CONFIG_CPU_IDLE_GOV_MENU
-extern void menu_hrtimer_cancel(void);
-# else
-static inline void menu_hrtimer_cancel(void) {}
-# endif /* CONFIG_CPU_IDLE_GOV_MENU */
 
 #endif

@@ -29,10 +29,6 @@
 #include <trace/events/irq.h>
 
 #include <asm/irq.h>
-#ifdef CONFIG_SEC_DEBUG
-#include <mach/sec_debug.h>
-#endif
-
 /*
    - No shared variables, all the data are CPU local.
    - If a softirq needs serialization, let it serialize itself
@@ -198,21 +194,21 @@ void local_bh_enable_ip(unsigned long ip)
 EXPORT_SYMBOL(local_bh_enable_ip);
 
 /*
- * We restart softirq processing for at most 2 ms,
- * and if need_resched() is not set.
+ * We restart softirq processing MAX_SOFTIRQ_RESTART times,
+ * and we fall back to softirqd after that.
  *
- * These limits have been established via experimentation.
+ * This number has been established via experimentation.
  * The two things to balance is latency against fairness -
  * we want to handle softirqs as soon as possible, but they
  * should not be able to lock up the box.
  */
-#define MAX_SOFTIRQ_TIME  max(1, (2*HZ/1000))
+#define MAX_SOFTIRQ_RESTART 10
 
 asmlinkage void __do_softirq(void)
 {
 	struct softirq_action *h;
 	__u32 pending;
-	unsigned long end = jiffies + MAX_SOFTIRQ_TIME;
+	int max_restart = MAX_SOFTIRQ_RESTART;
 	int cpu;
 
 	pending = local_softirq_pending();
@@ -239,13 +235,7 @@ restart:
 			kstat_incr_softirqs_this_cpu(vec_nr);
 
 			trace_softirq_entry(vec_nr);
-#ifdef CONFIG_SEC_DEBUG
-			secdbg_msg("softirq %pS entry", h->action);
-#endif
 			h->action(h);
-#ifdef CONFIG_SEC_DEBUG
-			secdbg_msg("softirq %pS exit", h->action);
-#endif
 			trace_softirq_exit(vec_nr);
 			if (unlikely(prev_count != preempt_count())) {
 				printk(KERN_ERR "huh, entered softirq %u %s %p"
@@ -265,12 +255,11 @@ restart:
 	local_irq_disable();
 
 	pending = local_softirq_pending();
-	if (pending) {
-		if (time_before(jiffies, end) && !need_resched())
-			goto restart;
+	if (pending && --max_restart)
+		goto restart;
 
+	if (pending)
 		wakeup_softirqd();
-	}
 
 	lockdep_softirq_exit();
 
@@ -344,10 +333,6 @@ void irq_exit(void)
 {
 	account_system_vtime(current);
 	trace_hardirq_exit();
-#ifdef CONFIG_SEC_DEBUG
-	secdbg_msg("hardirq exit");
-#endif
-
 	sub_preempt_count(IRQ_EXIT_OFFSET);
 	if (!in_interrupt() && local_softirq_pending())
 		invoke_softirq();
@@ -471,13 +456,7 @@ static void tasklet_action(struct softirq_action *a)
 			if (!atomic_read(&t->count)) {
 				if (!test_and_clear_bit(TASKLET_STATE_SCHED, &t->state))
 					BUG();
-#ifdef CONFIG_SEC_DEBUG
-				sec_debug_irq_sched_log(-1, t->func, 3);
 				t->func(t->data);
-				sec_debug_irq_sched_log(-1, t->func, 4);
-#else
-				t->func(t->data);
-#endif
 				tasklet_unlock(t);
 				continue;
 			}

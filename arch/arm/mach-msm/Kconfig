@@ -288,7 +288,6 @@ config ARCH_MSM8974
 	select KRAIT_REGULATOR
 	select ENABLE_VMALLOC_SAVINGS
 	select HAVE_NMI_WATCHDOG if MSM_WATCHDOG_V2
-	select HAS_MACH_MEMUTILS
 
 config ARCH_APQ8084
 	bool "APQ8084"
@@ -341,7 +340,6 @@ config ARCH_FSM9900
 	select MSM_GPIOMUX
 	select MULTI_IRQ_HANDLER
 	select PM_DEVFREQ
-	select MSM_DEVFREQ_CPUBW
 	select MSM_PIL
 	select MSM_NATIVE_RESTART
 	select MSM_RESTART_V2
@@ -1087,29 +1085,11 @@ config MACH_SONY_TOGARI_ROW
 	  If you enable this config,
 	  Please use SONY Mobile source tree.
 
-config MACH_SONY_TOGARI_WINDY
-	depends on ARCH_MSM8974
-	bool "Sony Mobile Togari Windy"
-	help
-	  Support for the SONY Mobile Togari Windy device.
-	  It is based on QCOM APQ8074 chipset.
-	  If you enable this config,
-	  Please use SONY Mobile source tree.
-
 config MACH_SONY_TOGARI_BRAZIL
 	depends on ARCH_MSM8974
 	bool "Sony Mobile Togari Brazil"
 	help
 	  Support for the SONY Mobile Togari Brazil device.
-	  It is based on QCOM MSM8974 chipset.
-	  If you enable this config,
-	  Please use SONY Mobile source tree.
-
-config MACH_SONY_TOGARI_KDDI
-	depends on ARCH_MSM8974
-	bool "Sony Mobile Togari Kddi"
-	help
-	  Support for the SONY Mobile Togari Kddi device.
 	  It is based on QCOM MSM8974 chipset.
 	  If you enable this config,
 	  Please use SONY Mobile source tree.
@@ -1123,24 +1103,6 @@ config MACH_SONY_HONAMI_ROW
 	  If you enable this config,
 	  Please use SONY Mobile source tree.
 
-config MACH_SONY_HONAMI_DCM
-	depends on ARCH_MSM8974
-	bool "Sony Mobile Honami Docomo"
-	help
-	  Support for the SONY Mobile Honami Docomo device.
-	  It is based on QCOM MSM8974 chipset.
-	  If you enable this config,
-	  Please use SONY Mobile source tree.
-
-config MACH_SONY_HONAMI_KDDI
-	depends on ARCH_MSM8974
-	bool "Sony Mobile Honami Kddi"
-	help
-	  Support for the SONY Mobile Honami Kddi device.
-	  It is based on QCOM MSM8974 chipset.
-	  If you enable this config,
-	  Please use SONY Mobile source tree.
-
 config MACH_SONY_HONAMI_BRAZIL
 	depends on ARCH_MSM8974
 	bool "Sony Mobile Honami Brazil"
@@ -1150,29 +1112,11 @@ config MACH_SONY_HONAMI_BRAZIL
 	  If you enable this config,
 	  Please use SONY Mobile source tree.
 
-config MACH_SONY_HONAMI_TMOUS
-	depends on ARCH_MSM8974
-	bool "Sony Mobile Honami TMOUS"
-	help
-	  Support for the SONY Mobile Honami tmobile us device.
-	  It is based on QCOM MSM8974 chipset.
-	  If you enable this config,
-	  Please use SONY Mobile source tree.
-
 config MACH_SONY_AMAMI_ROW
 	depends on ARCH_MSM8974
 	bool "Sony Mobile Amami ROW"
 	help
 	  Support for the SONY Mobile Amami ROW device.
-	  It is based on QCOM MSM8974 chipset.
-	  If you enable this config,
-	  Please use SONY Mobile source tree.
-
-config MACH_SONY_AMAMI_DCM
-	depends on ARCH_MSM8974
-	bool "Sony Mobile Amami Docomo"
-	help
-	  Support for the SONY Mobile Amami Docomo device.
 	  It is based on QCOM MSM8974 chipset.
 	  If you enable this config,
 	  Please use SONY Mobile source tree.
@@ -1939,22 +1883,6 @@ config MSM_RPCSERVER_HANDSET
 	  Support for receiving handset events like headset detect,
 	  headset switch and clamshell state.
 
-config MSM_RMT_STORAGE_CLIENT
-	depends on (ARCH_MSM && MSM_ONCRPCROUTER)
-	default n
-	bool "Remote Storage RPC client"
-	help
-	  Provide RPC mechanism for remote processors to access storage
-	  device on apps processor.
-
-config MSM_RMT_STORAGE_CLIENT_STATS
-	depends on (MSM_RMT_STORAGE_CLIENT && DEBUG_FS)
-	default n
-	bool "Remote storage RPC client performance statistics"
-	help
-	  Collects performance statistics and shows this information
-	  through a debugfs file rmt_storage_stats.
-
 config MSM_DALRPC
 	bool "DAL RPC support"
 	default n
@@ -1987,36 +1915,6 @@ config MSM_CPU_FREQ_MIN
 	depends on MSM_CPU_FREQ_SET_MIN_MAX
 	default 245760
 
-config INTELLI_PLUG
-	bool "Enable intelli-plug cpu hotplug driver"
-	default n
-	help
-	  Generic Intelli-plug cpu hotplug driver for ARM SOCs
-
-config MSM_CPUFREQ_LIMITER
-	tristate "MSM CPU frequency limiter"
-	default n
-	help
-	  This driver limits MSM CPU frequency through sysfs file system.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called cpufreq_stats.
-
-	  If in doubt, say N.
-
-config CPU_OC
-	bool "allow 2.3 GHz OC bin"
-	default n
-	help
-	  Unlock the CPU Overclock freq speed @ 2.3 GHz
-
-config OC_ULTIMATE
-	bool "allow 2.419 GHz max OC option"
-	depends on CPU_OC
-	default n
-	help
-	  Unlock the ultimate Overclock freq speed @ 2.419 GHz
-
 endif # CPU_FREQ_MSM
 
 config MSM_DEVFREQ_CPUBW
@@ -2032,20 +1930,6 @@ config MSM_DEVFREQ_CPUBW
 	  DDR IB/AB bandwidth votes. This driver provides a SoC topology
 	  agnostic interface to so that some of the devfreq governors can be
 	  shared across SoCs.
-
-config TURBO_BOOST
-	bool "Enable CPU Turbo boost option"
-	default y
-	help
-	  This option allows overclocking of 2 cores to higher clock rate
-	  than stock maximum.  When more than 2 cores are active, the clock
-	  is limited to stock max speeds
-
-config CPU_VOLTAGE_TABLE
-	bool "Enable CPU Voltage Table via sysfs for adjustements"
-	default n
-	help
-	  DTS based kernel User Votlage Control
 
 config MSM_AVS_HW
 	bool "Enable Adaptive Voltage Scaling (AVS)"
@@ -3160,6 +3044,13 @@ config MSM_UARTDM_Core_v14
 	help
 		Select if BLSP based UART Core v.14 or higher is present.
 
+config MSM_COMMON_LOG
+	bool "Use to export symbols for parsing memory dump"
+	help
+	 Use this to export symbols to a memory dump table. This table
+	 can be used by post analysis tools to extract information from
+	 memory when device crashes.
+
 config MSM_BOOT_STATS
 	bool "Use MSM boot stats reporting"
 	help
@@ -3199,25 +3090,6 @@ config WALL_CLK_SYSFS
 	help
 	 Support the wallclk directory in sysfs filesystem to enable the
 	 wall clock simulation and read the current SFN.
- 
-config FORCE_FAST_CHARGE
-	bool "Force AC charge mode at will"
-	default y
-	help
-	  A simple sysfs interface to force adapters that
-	  are detected as USB to charge as AC.
-
-config MSM_SLEEPER
-	bool "Limit max frequency while screen is off"
-	default y
-	help
-	  Limit max frequency while screen is off 
-
-config HAS_MACH_MEMUTILS
-	default n
-	bool "Motorola MSM memcpy enhancements"
-	help
-	Faster memcpy performance for Krait
 
 config KRAIT_REGULATOR
 	bool "Support Kraits powered via ganged regulators in the pmic"

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Sony Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -481,6 +481,8 @@ static void subsystem_powerup(struct subsys_device *dev, void *data)
 	pr_info("[%p]: Powering up %s\n", current, name);
 	init_completion(&dev->err_ready);
 	if (dev->desc->powerup(dev->desc) < 0) {
+		notify_each_subsys_device(&dev, 1, SUBSYS_POWERUP_FAILURE,
+								NULL);
 		/* If a system shutdown is underway, ignore errors. */
 		if (system_state == SYSTEM_POWER_OFF) {
 			pr_err("[%p]: Powerup error: %s!", current, name);
@@ -490,9 +492,12 @@ static void subsystem_powerup(struct subsys_device *dev, void *data)
 	}
 
 	ret = wait_for_err_ready(dev);
-	if (ret)
+	if (ret) {
+		notify_each_subsys_device(&dev, 1, SUBSYS_POWERUP_FAILURE,
+								NULL);
 		panic("[%p]: Timed out waiting for error ready: %s!",
 			current, name);
+	}
 	subsys_set_state(dev, SUBSYS_ONLINE);
 }
 
@@ -520,8 +525,11 @@ static int subsys_start(struct subsys_device *subsys)
 
 	init_completion(&subsys->err_ready);
 	ret = subsys->desc->start(subsys->desc);
-	if (ret)
+	if (ret){
+		notify_each_subsys_device(&subsys, 1, SUBSYS_POWERUP_FAILURE,
+									NULL);
 		return ret;
+	}
 
 	if (subsys->desc->is_not_loadable) {
 		subsys_set_state(subsys, SUBSYS_ONLINE);
@@ -529,12 +537,14 @@ static int subsys_start(struct subsys_device *subsys)
 	}
 
 	ret = wait_for_err_ready(subsys);
-	if (ret)
+	if (ret) {
 		/* pil-boot succeeded but we need to shutdown
 		 * the device because error ready timed out.
 		 */
+		notify_each_subsys_device(&subsys, 1, SUBSYS_POWERUP_FAILURE,
+									NULL);
 		subsys->desc->stop(subsys->desc);
-	else
+	} else
 		subsys_set_state(subsys, SUBSYS_ONLINE);
 
 	return ret;

@@ -1,6 +1,6 @@
 /* arch/arm/boot/dts/msm8974-rhine_honami_brazil.dtsi
  *
- * Copyright (C) 2013-2014 Sony Mobile Communications AB.
+ * Copyright (C) 2013 Sony Mobile Communications Inc.
  *
  * Author: Shougo Watanabe <Shougo.X.Watanabe@sonymobile.com>
  *
@@ -12,6 +12,10 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
+ *
+ * NOTE: This file has been modified by Sony Mobile Communications Inc.
+ * Modifications are Copyright (c) 2013 Sony Mobile Communications Inc,
+ * and licensed under the license of the file.
  */
 
 /include/ "dsi-panel-honami.dtsi"
@@ -189,15 +193,6 @@
 			gpio-key,wakeup;
 			debounce-interval = <15>;
 		};
-
-		sim_det {
-			label = "sim-detection";
-			gpios = <&msmgpio 9 0x0>;
-			linux,input-type = <5>;
-			linux,code = <7>;
-			gpio-key,wakeup;
-			debounce-interval = <10>;
-		};
 	};
 
 	qcom,cci@fda0C000 {
@@ -262,6 +257,13 @@
 					mount_angle = <270>;
 					sensor_rotation = <180>;
 					sensor_facing = <0>;
+					pixel_number_w = <5248>;
+					pixel_number_h = <3936>;
+					diagonal_len = "7.87";
+					unit_cell_size = "1.20";
+					min_f_number = "2.00";
+					max_f_number = "2.00";
+					has_focus_actuator = <1>;
 					has_3a = <0>;
 					pll_num = <18>;
 					pll = <600 318 386 684 318 578 293 600 597 599 318 596 599 474 599 825 578 578>;
@@ -308,6 +310,13 @@
 					mount_angle = <90>;
 					sensor_rotation = <0>;
 					sensor_facing = <0>;
+					pixel_number_w = <5248>;
+					pixel_number_h = <3936>;
+					diagonal_len = "7.87";
+					unit_cell_size = "1.20";
+					min_f_number = "2.00";
+					max_f_number = "2.00";
+					has_focus_actuator = <1>;
 					has_3a = <0>;
 					pll_num = <18>;
 					pll = <600 318 386 684 318 578 293 600 597 599 318 596 599 474 599 825 578 578>;
@@ -354,6 +363,13 @@
 					mount_angle = <270>;
 					sensor_rotation = <180>;
 					sensor_facing = <0>;
+					pixel_number_w = <5248>;
+					pixel_number_h = <3936>;
+					diagonal_len = "7.87";
+					unit_cell_size = "1.20";
+					min_f_number = "2.00";
+					max_f_number = "2.00";
+					has_focus_actuator = <1>;
 					has_3a = <0>;
 					pll_num = <18>;
 					pll = <674 674 674 674 674 674 674 674 674 674 674 674 674 674 674 674 674 674>;
@@ -448,6 +464,13 @@
 					mount_angle = <270>;
 					sensor_rotation = <180>;
 					sensor_facing = <1>;
+					pixel_number_w = <1976>;
+					pixel_number_h = <1200>;
+					diagonal_len = "2.59";
+					unit_cell_size = "1.12";
+					min_f_number = "2.80";
+					max_f_number = "2.80";
+					has_focus_actuator = <0>;
 					has_3a = <0>;
 					pll_num = <18>;
 					pll = <101 101 101 101 101 101 101 101 101 101 101 101 101 101 101 101 101 101>;
@@ -490,6 +513,13 @@
 					mount_angle = <270>;
 					sensor_rotation = <180>;
 					sensor_facing = <1>;
+					pixel_number_w = <1976>;
+					pixel_number_h = <1200>;
+					diagonal_len = "2.59";
+					unit_cell_size = "1.12";
+					min_f_number = "2.80";
+					max_f_number = "2.80";
+					has_focus_actuator = <0>;
 					has_3a = <0>;
 					pll_num = <18>;
 					pll = <101 101 101 101 101 101 101 101 101 101 101 101 101 101 101 101 101 101>;
@@ -532,6 +562,13 @@
 					mount_angle = <270>;
 					sensor_rotation = <180>;
 					sensor_facing = <1>;
+					pixel_number_w = <1976>;
+					pixel_number_h = <1200>;
+					diagonal_len = "2.59";
+					unit_cell_size = "1.12";
+					min_f_number = "2.80";
+					max_f_number = "2.80";
+					has_focus_actuator = <0>;
 					has_3a = <0>;
 					pll_num = <18>;
 					pll = <101 101 101 101 101 101 101 101 101 101 101 101 101 101 101 101 101 101>;
@@ -631,6 +668,18 @@
 
 	qcom,msm-thermal {
 		qcom,pmic-sw-mode-regs = "vdd_dig";
+	};
+
+	sim_detect {
+		compatible = "sim-detect";
+		interrupt-parent = <&msmgpio>;
+		interrupts = <9 0>;
+
+		sim1_det {
+			label = "sim-detection";
+			gpios = <&msmgpio 9 0x0>;
+			debounce-interval = <10>;
+		};
 	};
 };
 
@@ -1066,21 +1115,11 @@
 		qcom,leds@d800 {
 			status = "okay";
 			qcom,wled_0 {
-				label = "wled";
-				linux,name = "wled:backlight";
-				linux,default-trigger = "bkl-trigger";
-				qcom,cs-out-en = <1>;
 				qcom,cabc-en = <1>;
 				qcom,op-fdbck = <0>;
-				qcom,default-state = "on";
 				qcom,max-current = <20>;
-				qcom,ctrl-delay-us = <0>;
 				qcom,boost-curr-lim = <3>;
-				qcom,cp-sel = <0>;
-				qcom,switch-freq = <2>;
-				qcom,ovp-val = <2>;
 				qcom,num-strings = <2>;
-				qcom,id = <0>;
 			};
 		};
 

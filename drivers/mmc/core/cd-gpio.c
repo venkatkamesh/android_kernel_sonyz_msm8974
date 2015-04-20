@@ -2,7 +2,7 @@
  * Generic GPIO card-detect helper
  *
  * Copyright (C) 2011, Guennadi Liakhovetski <g.liakhovetski@gmx.de>
- * Copyright (C) 2013 Sony Mobile Communications AB.
+ * Copyright (C) 2013 Sony Mobile Communications Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -20,11 +20,12 @@
 
 struct mmc_cd_gpio {
 	unsigned int gpio;
-	char label[0];
 	bool status;
 #ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
-	int irq_detect;
+	bool pending_detect;
+	bool suspended;
 #endif
+	char label[0];
 };
 
 int mmc_cd_get_status(struct mmc_host *host)
@@ -42,33 +43,37 @@ out:
 }
 
 #ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
-int mmc_cd_slot_status_changed(struct mmc_host *host)
+void mmc_cd_prepare_suspend(struct mmc_host *host, bool pending_detect)
 {
-	int status;
 	struct mmc_cd_gpio *cd = host->hotplug.handler_priv;
-
 	if (!cd)
-		goto out;
+		return;
 
-	status = mmc_cd_get_status(host);
-	if (unlikely(status < 0))
-		return 1;
-
-	if ((cd->irq_detect && status) || (!status && host->card)) {
-		cd->irq_detect = 0;
-		return 1;
-	}
-
-out:
-	return 0;
+	cd->suspended = true;
+	cd->pending_detect = pending_detect;
 }
-EXPORT_SYMBOL(mmc_cd_slot_status_changed);
+EXPORT_SYMBOL(mmc_cd_prepare_suspend);
+#endif
+
+#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
+bool mmc_cd_is_pending_detect(struct mmc_host *host)
+{
+	struct mmc_cd_gpio *cd = host->hotplug.handler_priv;
+	if (!cd)
+		return false;
+
+	return cd->pending_detect;
+}
+EXPORT_SYMBOL(mmc_cd_is_pending_detect);
 #endif
 
 static irqreturn_t mmc_cd_gpio_irqt(int irq, void *dev_id)
 {
 	struct mmc_host *host = dev_id;
 	struct mmc_cd_gpio *cd = host->hotplug.handler_priv;
+#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
+	unsigned long flags;
+#endif
 	int status;
 
 	status = mmc_cd_get_status(host);
@@ -76,7 +81,25 @@ static irqreturn_t mmc_cd_gpio_irqt(int irq, void *dev_id)
 		goto out;
 
 #ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
-	cd->irq_detect = 1;
+	if (cd->suspended) {
+		/*
+		 * host->rescan_disable is normally set to 0 in mmc_resume_bus
+		 * but in case of a deferred resume we might get IRQ before
+		 * it is called.
+		 */
+		spin_lock_irqsave(&host->lock, flags);
+		host->rescan_disable = 0;
+		spin_unlock_irqrestore(&host->lock, flags);
+
+		/*
+		 * We've got IRQ just after resuming device but the status
+		 * did not change; card might have been swapped, force
+		 * redetection.
+		 */
+		if (status == cd->status)
+			status = 2;
+	}
+	cd->suspended = false;
 #endif
 
 	if (status ^ cd->status) {
@@ -86,9 +109,6 @@ static irqreturn_t mmc_cd_gpio_irqt(int irq, void *dev_id)
 				"HIGH" : "LOW");
 		cd->status = status;
 
-#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
-		cd->irq_detect = 0;
-#endif
 		/* Schedule a card detection after a debounce timeout */
 		mmc_detect_change(host, msecs_to_jiffies(100));
 	}
@@ -125,8 +145,10 @@ int mmc_cd_gpio_request(struct mmc_host *host, unsigned int gpio)
 		goto eirqreq;
 
 	cd->status = ret;
+
 #ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
-	cd->irq_detect = 0;
+	cd->pending_detect = false;
+	cd->suspended = false;
 #endif
 
 	ret = request_threaded_irq(irq, NULL, mmc_cd_gpio_irqt,

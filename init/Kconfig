@@ -130,13 +130,10 @@ config HAVE_KERNEL_XZ
 config HAVE_KERNEL_LZO
 	bool
 
-config HAVE_KERNEL_LZ4
-	bool
-
 choice
 	prompt "Kernel compression mode"
 	default KERNEL_GZIP
-	depends on HAVE_KERNEL_GZIP || HAVE_KERNEL_BZIP2 || HAVE_KERNEL_LZMA || HAVE_KERNEL_XZ || HAVE_KERNEL_LZO || HAVE_KERNEL_LZ4
+	depends on HAVE_KERNEL_GZIP || HAVE_KERNEL_BZIP2 || HAVE_KERNEL_LZMA || HAVE_KERNEL_XZ || HAVE_KERNEL_LZO
 	help
 	  The linux kernel is a kind of self-extracting executable.
 	  Several compression algorithms are available, which differ
@@ -203,14 +200,6 @@ config KERNEL_LZO
 	  Its compression ratio is the poorest among the 4. The kernel
 	  size is about 10% bigger than gzip; however its speed
 	  (both compression and decompression) is the fastest.
-
-config KERNEL_LZ4
-	bool "LZ4"
-	depends on HAVE_KERNEL_LZ4
-	help
-	  Its compression ratio is worse than LZO. The size of the kernel
-	  is about 8% bigger than LZO. But the decompression speed is
-	  faster than LZO.
 
 endchoice
 
@@ -618,14 +607,6 @@ config CGROUP_FREEZER
 	help
 	  Provides a way to freeze and unfreeze all tasks in a
 	  cgroup.
-
- config CGROUP_TIMER_SLACK
-	bool "Timer slack cgroup controller"
-	help
-	  Provides a way to set minimal timer slack value for tasks in
-	  a cgroup.
-	  It's useful in mobile devices where certain background apps
-	  are attached to a cgroup and combined wakeups are desired.
 
 config CGROUP_DEVICE
 	bool "Device controller for cgroups"
@@ -1306,11 +1287,6 @@ config SLOB
 	   SLOB replaces the stock allocator with a drastically simpler
 	   allocator. SLOB is generally more space efficient but
 	   does not perform as well on large systems.
-
-config SLQB
-	bool "SLQB (Queued allocator)"
-	help
-	   SLQB is a proposed new slab allocator.
 
 endchoice
 

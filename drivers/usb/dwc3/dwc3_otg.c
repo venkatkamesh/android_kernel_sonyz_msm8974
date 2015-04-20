@@ -12,6 +12,9 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
+ *
+ * NOTE: This file has been modified by Sony Mobile Communications AB.
+ * Modifications are licensed under the License.
  */
 
 #include <linux/module.h>
@@ -27,10 +30,6 @@
 #include "dwc3_otg.h"
 #include "io.h"
 #include "xhci.h"
- 
-#ifdef CONFIG_FORCE_FAST_CHARGE
-#include <linux/fastchg.h>
-#endif
 
 #define VBUS_REG_CHECK_DELAY	(msecs_to_jiffies(1000))
 #define MAX_INVALID_CHRGR_RETRY 3
@@ -97,6 +96,17 @@ static int dwc3_otg_set_suspend(struct usb_phy *phy, int suspend)
 		pm_runtime_get_noresume(phy->dev);
 		pm_runtime_resume(phy->dev);
 	}
+
+	return 0;
+}
+
+static void dwc3_otg_set_hsphy_auto_suspend(struct dwc3_otg *dotg, bool susp);
+static int dwc3_otg_set_autosuspend(struct usb_phy *phy, int enable_autosuspend)
+{
+	struct usb_otg *otg = phy->otg;
+	struct dwc3_otg *dotg = container_of(otg, struct dwc3_otg, otg);
+
+	dwc3_otg_set_hsphy_auto_suspend(dotg, enable_autosuspend);
 
 	return 0;
 }
@@ -206,7 +216,6 @@ static int dwc3_otg_start_host(struct usb_otg *otg, int on)
 		dev_dbg(otg->phy->dev, "%s: turn on host\n", __func__);
 
 		dwc3_otg_notify_host_mode(otg, on);
-
 		/* register ocp notification */
 		if (ext_xceiv && ext_xceiv->otg_capability &&
 				ext_xceiv->ext_ocp_notification.notify) {
@@ -528,6 +537,18 @@ static void dwc3_ext_event_notify(struct usb_otg *otg,
 	}
 }
 
+static int  dwc3_ext_set_ocp_mode(struct usb_otg *otg, enum usb_ocp_modes mode)
+{
+	struct dwc3_otg *dotg = container_of(otg, struct dwc3_otg, otg);
+	struct usb_phy *phy = dotg->otg.phy;
+	int ret;
+
+	dev_dbg(phy->dev, "set ocp mode(%d)\n", mode);
+	ret = regulator_set_ocp_mode(dotg->vbus_otg, mode);
+
+	return ret;
+}
+
 /**
  * dwc3_set_ext_xceiv - bind/unbind external transceiver driver
  * @otg: Pointer to the otg transceiver structure
@@ -751,6 +772,7 @@ void dwc3_otg_init_sm(struct dwc3_otg *dotg)
 	}
 }
 
+extern int qpnp_chg_notify_invalid_usb(void);
 /**
  * dwc3_otg_sm_work - workqueue function.
  *
@@ -834,11 +856,6 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 					work = 1;
 					break;
 				case DWC3_SDP_CHARGER:
-#ifdef CONFIG_FORCE_FAST_CHARGE
-					if (force_fast_charge > 0)
-						dwc3_otg_set_power(phy,
-							DWC3_IDEV_CHG_MAX);
-#endif
 					dwc3_otg_start_peripheral(&dotg->otg,
 									1);
 					phy->state = OTG_STATE_B_PERIPHERAL;
@@ -860,6 +877,7 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 					if (dotg->charger_retry_count ==
 						max_chgr_retry_count) {
 						dwc3_otg_set_power(phy, 0);
+						qpnp_chg_notify_invalid_usb();
 						pm_runtime_put_sync(phy->dev);
 						break;
 					}
@@ -1069,6 +1087,7 @@ int dwc3_otg_init(struct dwc3 *dwc)
 
 	dotg->otg.set_peripheral = dwc3_otg_set_peripheral;
 	dotg->otg.set_host = dwc3_otg_set_host;
+	dotg->otg.set_ocp_mode = dwc3_ext_set_ocp_mode;
 
 	/* This reference is used by dwc3 modules for checking otg existance */
 	dwc->dotg = dotg;
@@ -1085,6 +1104,7 @@ int dwc3_otg_init(struct dwc3 *dwc)
 	dotg->otg.phy->dev = dwc->dev;
 	dotg->otg.phy->set_power = dwc3_otg_set_power;
 	dotg->otg.phy->set_suspend = dwc3_otg_set_suspend;
+	dotg->otg.phy->set_phy_autosuspend = dwc3_otg_set_autosuspend;
 
 	ret = usb_set_transceiver(dotg->otg.phy);
 	if (ret) {

@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -27,6 +27,9 @@
 
 #define KGSL_MAX_CLKS 6
 
+/* Only two supported levels, min & max */
+#define KGSL_CONSTRAINT_PWR_MAXLEVELS 2
+
 struct platform_device;
 
 struct kgsl_clk_stats {
@@ -38,6 +41,17 @@ struct kgsl_clk_stats {
 	unsigned int no_nap_cnt;
 	unsigned int elapsed;
 	unsigned int elapsed_old;
+};
+
+struct kgsl_pwr_constraint {
+	unsigned int type;
+	unsigned int sub_type;
+	union {
+		struct {
+			unsigned int level;
+		} pwrlevel;
+	} hint;
+	unsigned long expires;
 };
 
 /**
@@ -67,6 +81,7 @@ struct kgsl_clk_stats {
  * @bus_control - true if the bus calculation is independent
  * @bus_index - default bus index into the bus_ib table
  * @bus_ib - the set of unique ib requests needed for the bus calculation
+ * @constraint - currently active power constraint
  */
 
 struct kgsl_pwrctrl {
@@ -98,6 +113,7 @@ struct kgsl_pwrctrl {
 	int bus_mod;
 	unsigned int bus_index[KGSL_MAX_PWRLEVELS];
 	uint64_t bus_ib[KGSL_MAX_PWRLEVELS];
+	struct kgsl_pwr_constraint constraint;
 };
 
 void kgsl_pwrctrl_irq(struct kgsl_device *device, int state);
@@ -117,7 +133,6 @@ void kgsl_pwrctrl_uninit_sysfs(struct kgsl_device *device);
 void kgsl_pwrctrl_enable(struct kgsl_device *device);
 void kgsl_pwrctrl_disable(struct kgsl_device *device);
 bool kgsl_pwrctrl_isenabled(struct kgsl_device *device);
-bool kgsl_pwrrail_isenabled(struct kgsl_device *device);
 
 static inline unsigned long kgsl_get_clkrate(struct clk *clk)
 {
@@ -143,7 +158,5 @@ int __must_check kgsl_active_count_get(struct kgsl_device *device);
 int __must_check kgsl_active_count_get_light(struct kgsl_device *device);
 void kgsl_active_count_put(struct kgsl_device *device);
 int kgsl_active_count_wait(struct kgsl_device *device, int count);
-void kgsl_pwrctrl_clk(struct kgsl_device *device, int state,
-				int requested_state);
 
 #endif /* __KGSL_PWRCTRL_H */

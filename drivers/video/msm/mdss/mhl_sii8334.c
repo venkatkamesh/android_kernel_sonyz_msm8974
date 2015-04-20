@@ -380,8 +380,12 @@ static int mhl_sii_wait_for_rgnd(struct mhl_tx_ctrl *mhl_ctrl)
 	/* let isr handle RGND interrupt */
 	pr_debug("%s:%u\n", __func__, __LINE__);
 	INIT_COMPLETION(mhl_ctrl->rgnd_done);
-	timeout = wait_for_completion_timeout
-		(&mhl_ctrl->rgnd_done, HZ * 3);
+	/*
+	 * after toggling reset line and enabling disc
+	 * tx can take a while to generate intr
+	 */
+	timeout = wait_for_completion_interruptible_timeout
+		(&mhl_ctrl->rgnd_done, HZ/2);
 	if (!timeout) {
 		if (mhl_ctrl->cur_state != POWER_STATE_D3)
 			switch_mode(mhl_ctrl, POWER_STATE_D3);
@@ -1202,6 +1206,11 @@ static void mhl_hpd_stat_isr(struct mhl_tx_ctrl *mhl_ctrl)
 		 * MSC REQ ABRT REASON
 		 */
 		cbus_stat = MHL_SII_CBUS_RD(0x0D);
+		if (BIT6 & cbus_stat)
+			mhl_drive_hpd(mhl_ctrl, HPD_UP);
+		else
+			mhl_drive_hpd(mhl_ctrl, HPD_DOWN);
+
 	}
 }
 
@@ -2139,16 +2148,6 @@ static int mhl_i2c_suspend_sub(struct i2c_client *client)
 	 * It results that the registered Interrupt handler will be called.
 	 */
 	enable_irq_wake(client->irq);
-
-	/* this is needed isr not to be executed before i2c resume */
-	/*
-	 * Disable ISR (interrupt service routine), it means disabling
-	 * interrupt handler, until i2c is resumed. If the handler is
-	 * executed before i2c is resumed, crash occurs since the handler
-	 * tries to access i2c and the procedure never finished (watchdog
-	 * timer expires!). When enable_irq is called during the interrupt
-	 * is active, the handler will be called.
-	 */
 	disable_irq(client->irq);
 	return 0;
 }
