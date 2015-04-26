@@ -58,6 +58,12 @@
 #include "board-rdtags.h"
 #endif
 #include "board-8974-console.h"
+#ifdef CONFIG_LCD_KCAL
+#include <mach/kcal.h>
+#include <linux/module.h>
+#include "../../../../drivers/video/msm/mdss/mdss_fb.h"
+extern int update_preset_lcdc_lut(void);
+#endif
 
 static struct memtype_reserve msm8974_reserve_table[] __initdata = {
 	[MEMTYPE_SMI] = {
@@ -133,7 +139,7 @@ static void reserve_debug_memory(void)
 	struct membank *mb = &meminfo.bank[meminfo.nr_banks - 1];
 	unsigned long bank_end = mb->start + mb->size;
 	/*Base address for rdtags*/
-	unsigned long debug_mem_base = bank_end - SZ_1M;
+	unsigned long debug_mem_base = bank_end - DEBUG_MEM_SIZE;
 	/*Base address for crash logs memory*/
 #ifdef CONFIG_CRASH_LAST_LOGS
 	unsigned long lastlogs_base = debug_mem_base + LAST_LOGS_OFFSET;
@@ -170,18 +176,101 @@ static void reserve_debug_memory(void)
 }
 #endif
 
+#ifdef CONFIG_ANDROID_PERSISTENT_RAM
+#define MSM_PERSISTENT_RAM_SIZE (SZ_1M)
+#define MSM_RAM_CONSOLE_SIZE (128 * SZ_1K)
+
+static struct persistent_ram_descriptor pr_desc = {
+#ifdef CONFIG_ANDROID_RAM_CONSOLE
+	.name = "ram_console",
+	.size = MSM_RAM_CONSOLE_SIZE
+#endif
+};
+
+static struct persistent_ram msm_pram = {
+	.size = MSM_PERSISTENT_RAM_SIZE,
+	.num_descs = 1,
+	.descs = &pr_desc
+};
+
+static void reserve_persistent_ram(void)
+{
+	struct membank *mb = &meminfo.bank[meminfo.nr_banks - 1];
+	unsigned long bank_end = mb->start + mb->size;
+
+	msm_pram.start = bank_end - DEBUG_MEM_SIZE - MSM_PERSISTENT_RAM_SIZE;
+	persistent_ram_early_init(&msm_pram);
+}
+#endif
+
+#ifdef CONFIG_ANDROID_RAM_CONSOLE
+static struct platform_device ram_console_device = {
+	.name           = "ram_console",
+	.id             = -1,
+	.dev = {
+		.platform_data = &ram_console_pdata,
+	}
+};
+#endif
 
 void __init msm_8974_reserve(void)
 {
-
 #if defined(CONFIG_RAMDUMP_TAGS) || defined(CONFIG_CRASH_LAST_LOGS)
 	reserve_debug_memory();
 #endif
+#ifdef CONFIG_ANDROID_PERSISTENT_RAM
+	reserve_persistent_ram();
+#endif
 	reserve_info = &msm8974_reserve_info;
 	of_scan_flat_dt(dt_scan_for_memory_reserve, msm8974_reserve_table);
-
 	msm_reserve();
 }
+
+#ifdef CONFIG_LCD_KCAL
+extern int g_kcal_r;
+extern int g_kcal_g;
+extern int g_kcal_b;
+
+int kcal_set_values(int kcal_r, int kcal_g, int kcal_b)
+{
+	g_kcal_r = kcal_r;
+	g_kcal_g = kcal_g;
+	g_kcal_b = kcal_b;
+	return 0;
+}
+
+static int kcal_get_values(int *kcal_r, int *kcal_g, int *kcal_b)
+{
+	*kcal_r = g_kcal_r;
+	*kcal_g = g_kcal_g;
+	*kcal_b = g_kcal_b;
+	return 0;
+}
+
+static int kcal_refresh_values(void)
+{
+	return update_preset_lcdc_lut();
+}
+
+static struct kcal_platform_data kcal_pdata = {
+	.set_values = kcal_set_values,
+	.get_values = kcal_get_values,
+	.refresh_display = kcal_refresh_values
+};
+
+static struct platform_device kcal_platrom_device = {
+	.name = "kcal_ctrl",
+	.dev = {
+		.platform_data = &kcal_pdata,
+	}
+};
+
+void __init add_lcd_kcal_devices(void)
+{
+	pr_info (" LCD_KCAL_DEBUG : %s \n", __func__);
+	platform_device_register(&kcal_platrom_device);
+};
+#endif
 
 static void __init msm8974_early_memory(void)
 {
@@ -197,7 +286,9 @@ void __init msm8974_add_devices(void)
 #ifdef CONFIG_CRASH_LAST_LOGS
 	platform_device_register(&lastlogs_device);
 #endif
-
+#ifdef CONFIG_ANDROID_RAM_CONSOLE
+	platform_device_register(&ram_console_device);
+#endif
 }
 
 /*
@@ -225,6 +316,9 @@ void __init msm8974_add_drivers(void)
 	msm_thermal_init(NULL);
 #else
 	msm_thermal_device_init();
+#endif
+#ifdef CONFIG_LCD_KCAL
+	add_lcd_kcal_devices();
 #endif
 }
 
@@ -269,8 +363,6 @@ static struct of_dev_auxdata msm8974_auxdata_lookup[] __initdata = {
 			"msm-tsens", NULL),
 	OF_DEV_AUXDATA("qcom,qcedev", 0xFD440000, \
 			"qcedev.0", NULL),
-	OF_DEV_AUXDATA("qcom,qcrypto", 0xFD440000, \
-			"qcrypto.0", NULL),
 	OF_DEV_AUXDATA("qcom,hsic-host", 0xF9A00000, \
 			"msm_hsic_host", NULL),
 	OF_DEV_AUXDATA("qcom,hsic-smsc-hub", 0, "msm_smsc_hub",
@@ -326,4 +418,3 @@ DT_MACHINE_START(MSM8974_DT, "Qualcomm MSM 8974 (Flattened Device Tree)")
 	.restart = msm_restart,
 	.smp = &msm8974_smp_ops,
 MACHINE_END
-

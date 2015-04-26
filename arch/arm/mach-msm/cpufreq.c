@@ -17,7 +17,6 @@
  *
  */
 
-#include <linux/earlysuspend.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/cpufreq.h>
@@ -270,7 +269,7 @@ static int msm_cpufreq_verify(struct cpufreq_policy *policy)
 static unsigned int msm_cpufreq_get_freq(unsigned int cpu)
 {
 	if (is_clk && is_sync)
-		 cpu = 0;
+		cpu = 0;
 
 	if (is_clk)
 		return clk_get_rate(cpu_clk[cpu]) / 1000;
@@ -315,6 +314,33 @@ static inline int msm_cpufreq_limits_init(void)
 	return 0;
 }
 
+int msm_cpufreq_set_freq_limits(uint32_t cpu, uint32_t min, uint32_t max)
+{
+	struct cpu_freq *limit = &per_cpu(cpu_freq_info, cpu);
+
+	if (!limit->limits_init)
+		msm_cpufreq_limits_init();
+
+	if ((min != MSM_CPUFREQ_NO_LIMIT) &&
+		min >= limit->min && min <= limit->max)
+		limit->allowed_min = min;
+	else
+		limit->allowed_min = limit->min;
+
+
+	if ((max != MSM_CPUFREQ_NO_LIMIT) &&
+		max <= limit->max && max >= limit->min)
+		limit->allowed_max = max;
+	else
+		limit->allowed_max = limit->max;
+
+	pr_debug("%s: Limiting cpu %d min = %d, max = %d\n",
+			__func__, cpu,
+			limit->allowed_min, limit->allowed_max);
+
+	return 0;
+}
+EXPORT_SYMBOL(msm_cpufreq_set_freq_limits);
 
 static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 {
@@ -423,14 +449,13 @@ static int __cpuinit msm_cpufreq_cpu_callback(struct notifier_block *nfb,
 			update_l2_bw(NULL);
 		}
 		break;
-
-	 case CPU_UP_CANCELED:
+	case CPU_UP_CANCELED:
 		if (is_clk) {
-			 clk_unprepare(cpu_clk[cpu]);
-			 clk_unprepare(l2_clk);
-			 update_l2_bw(NULL);
-		 }
-		 break;
+			clk_unprepare(cpu_clk[cpu]);
+			clk_unprepare(l2_clk);
+			update_l2_bw(NULL);
+		}
+		break;
 	case CPU_UP_PREPARE:
 		if (is_clk) {
 			rc = clk_prepare(l2_clk);
@@ -443,15 +468,15 @@ static int __cpuinit msm_cpufreq_cpu_callback(struct notifier_block *nfb,
 		}
 		break;
 	case CPU_STARTING:
-		 if (is_clk) {
-			 rc = clk_enable(l2_clk);
-			 if (rc < 0)
-				 return NOTIFY_BAD;
-		 	rc = clk_enable(cpu_clk[cpu]);
-			 if (rc < 0)
-				 return NOTIFY_BAD;
-		 }
-		 break;
+		if (is_clk) {
+			rc = clk_enable(l2_clk);
+			if (rc < 0)
+				return NOTIFY_BAD;
+			rc = clk_enable(cpu_clk[cpu]);
+			if (rc < 0)
+				return NOTIFY_BAD;
+		}
+		break;
 	default:
 		break;
 	}

@@ -480,7 +480,7 @@ static void get_krait_bin_format_b(struct platform_device *pdev,
 #ifdef CONFIG_CPU_OC
 #ifdef CONFIG_OC_ULTIMATE
 	dev_info(&pdev->dev, "DooMLoRD: Forcing CPU OC Ultimate!\n");
-	*speed = 1;
+	*speed = 3;
 #else
 	dev_info(&pdev->dev, "DooMLoRD: Forcing CPU OC!\n");
 	*speed = 1;
@@ -673,7 +673,7 @@ ssize_t store_UV_mV_table(struct cpufreq_policy *policy, char *buf,
 	}
 	pr_warn("faux123: user voltage table modified!\n");
 
-	return ret;
+	return count;
 }
 #endif
 
