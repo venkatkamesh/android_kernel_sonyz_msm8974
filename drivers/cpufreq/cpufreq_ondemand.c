@@ -480,6 +480,19 @@ static ssize_t store_io_is_busy(struct kobject *a, struct attribute *b,
 	return count;
 }
 
+static ssize_t store_down_differential_multi_core(struct kobject *a,
+			struct attribute *b, const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+
+	ret = sscanf(buf, "%u", &input);
+	if (ret != 1)
+		return -EINVAL;
+	dbs_tuners_ins.down_differential_multi_core = input;
+	return count;
+}
+
 
 static ssize_t store_block_inp_time(struct kobject *a, struct attribute *b,
 					const char *buf, size_t count)
@@ -517,19 +530,6 @@ static ssize_t store_boost_duration(struct kobject *a, struct attribute *b,
 	if (ret != 1)
 		return -EINVAL;
 	dbs_tuners_ins.boost_duration = input;
-	return count;
-}
-
-static ssize_t store_down_differential_multi_core(struct kobject *a,
-			struct attribute *b, const char *buf, size_t count)
-{
-	unsigned int input;
-	int ret;
-
-	ret = sscanf(buf, "%u", &input);
-	if (ret != 1)
-		return -EINVAL;
-	dbs_tuners_ins.down_differential_multi_core = input;
 	return count;
 }
 
@@ -720,9 +720,12 @@ static ssize_t store_powersave_bias(struct kobject *a, struct attribute *b,
 
 				cpumask_set_cpu(cpu, &cpus_timer_done);
 				if (dbs_info->cur_policy) {
-					dbs_timer_exit(dbs_info);
 					/* restart dbs timer */
 					mutex_lock(&dbs_info->timer_mutex);
+					if (timer_pending(
+						&dbs_info->work.timer))
+						dbs_timer_exit(dbs_info);
+
 					dbs_timer_init(dbs_info);
 					/* Enable frequency synchronization
 					 * of CPUs */
@@ -1111,12 +1114,8 @@ static void do_dbs_timer(struct work_struct *work)
 			dbs_info->sample_type = DBS_SUB_SAMPLE;
 			delay = dbs_info->freq_hi_jiffies;
 		} else {
-			/* We want all CPUs to do sampling nearly on
-			 * same jiffy
-			 */
 			delay = usecs_to_jiffies(get_sampling_rate()
 				* dbs_info->rate_mult);
-
 			if (num_online_cpus() > 1) {
 				int delay_adj = jiffies % delay;
 				if (delay_adj < delay>>1)
@@ -1219,6 +1218,7 @@ static void dbs_refresh_callback(struct work_struct *work)
 		if (__cpufreq_driver_target(policy, target_freq,
 					CPUFREQ_RELATION_L) >= 0)
 			policy->cur = target_freq;
+
 		dbs_reset_sample(this_dbs_info);
 	}
 
