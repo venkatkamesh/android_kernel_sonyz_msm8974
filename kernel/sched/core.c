@@ -1449,13 +1449,12 @@ ttwu_do_wakeup(struct rq *rq, struct task_struct *p, int wake_flags)
 
 	if (rq->idle_stamp) {
 		u64 delta = rq->clock - rq->idle_stamp;
-		u64 max = 2*rq->max_idle_balance_cost;
+		u64 max = 2*sysctl_sched_migration_cost;
 
-		update_avg(&rq->avg_idle, delta);
-
-		if (rq->avg_idle > max)
+		if (delta > max)
 			rq->avg_idle = max;
-
+		else
+			update_avg(&rq->avg_idle, delta);
 		rq->idle_stamp = 0;
 	}
 #endif
@@ -1611,11 +1610,11 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 {
 	unsigned long flags;
 	int cpu, src_cpu, success = 0;
+	int notify = 0;
 
 	smp_wmb();
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
-	src_cpu = task_cpu(p);
-	cpu = src_cpu;
+	src_cpu = cpu = task_cpu(p);
 
 	if (!(p->state & state))
 		goto out;
@@ -1657,6 +1656,9 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 		p->sched_class->task_waking(p);
 
 	cpu = select_task_rq(p, SD_BALANCE_WAKE, wake_flags);
+
+	/* Refresh src_cpu as it could have changed since we last read it */
+	src_cpu = task_cpu(p);
 	if (src_cpu != cpu) {
 		wake_flags |= WF_MIGRATED;
 		set_task_cpu(p, cpu);
@@ -1666,10 +1668,13 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	ttwu_queue(p, cpu);
 stat:
 	ttwu_stat(p, cpu, wake_flags);
+
+	if (src_cpu != cpu && task_notify_on_migrate(p))
+		notify = 1;
 out:
 	raw_spin_unlock_irqrestore(&p->pi_lock, flags);
 
-	if (src_cpu != cpu && task_notify_on_migrate(p))
+	if (notify)
 		atomic_notifier_call_chain(&migration_notifier_head,
 					   cpu, (void *)src_cpu);
 	return success;
@@ -5516,7 +5521,6 @@ migration_call(struct notifier_block *nfb, unsigned long action, void *hcpu)
 
 	case CPU_UP_PREPARE:
 		rq->calc_load_update = calc_load_update;
-		rq->next_balance = jiffies;
 		break;
 
 	case CPU_ONLINE:
@@ -5568,7 +5572,6 @@ static int __cpuinit sched_cpu_active(struct notifier_block *nfb,
 				      unsigned long action, void *hcpu)
 {
 	switch (action & ~CPU_TASKS_FROZEN) {
-	case CPU_STARTING:
 	case CPU_DOWN_FAILED:
 		set_cpu_active((long)hcpu, true);
 		return NOTIFY_OK;
@@ -6117,7 +6120,7 @@ static const struct cpumask *cpu_cpu_mask(int cpu)
 	return cpumask_of_node(cpu_to_node(cpu));
 }
 
-int sched_smt_power_savings = 0, sched_mc_power_savings = 2;
+int sched_smt_power_savings = 0, sched_mc_power_savings = 0;
 
 struct sd_data {
 	struct sched_domain **__percpu sd;
@@ -6245,7 +6248,7 @@ build_sched_groups(struct sched_domain *sd, int cpu)
 	get_group(cpu, sdd, &sd->groups);
 	atomic_inc(&sd->groups->ref);
 
-	if (cpu != cpumask_first(span))
+	if (cpu != cpumask_first(sched_domain_span(sd)))
 		return 0;
 
 	lockdep_assert_held(&sched_domains_mutex);
@@ -6255,12 +6258,12 @@ build_sched_groups(struct sched_domain *sd, int cpu)
 
 	for_each_cpu(i, span) {
 		struct sched_group *sg;
-		int group, j;
+		int group = get_group(i, sdd, &sg);
+		int j;
 
 		if (cpumask_test_cpu(i, covered))
 			continue;
 
-		group = get_group(i, sdd, &sg);
 		cpumask_clear(sched_group_cpus(sg));
 		sg->sgp->power = 0;
 
@@ -6297,7 +6300,7 @@ static void init_sched_groups_power(int cpu, struct sched_domain *sd)
 {
 	struct sched_group *sg = sd->groups;
 
-	WARN_ON(!sg);
+	WARN_ON(!sd || !sg);
 
 	do {
 		sg->group_weight = cpumask_weight(sched_group_cpus(sg));
@@ -6358,8 +6361,11 @@ int sched_domain_level_max;
 
 static int __init setup_relax_domain_level(char *str)
 {
-	if (kstrtoint(str, 0, &default_relax_domain_level))
-		pr_warn("Unable to set relax_domain_level\n");
+	unsigned long val;
+
+	val = simple_strtoul(str, NULL, 0);
+	if (val < sched_domain_level_max)
+		default_relax_domain_level = val;
 
 	return 1;
 }
@@ -6556,13 +6562,15 @@ static void __sdt_free(const struct cpumask *cpu_map)
 }
 
 struct sched_domain *build_sched_domain(struct sched_domain_topology_level *tl,
-		const struct cpumask *cpu_map, struct sched_domain_attr *attr,
-		struct sched_domain *child, int cpu)
+		struct s_data *d, const struct cpumask *cpu_map,
+		struct sched_domain_attr *attr, struct sched_domain *child,
+		int cpu)
 {
 	struct sched_domain *sd = tl->init(tl, cpu);
 	if (!sd)
 		return child;
 
+	set_domain_attribute(sd, attr);
 	cpumask_and(sched_domain_span(sd), cpu_map, tl->mask(cpu));
 	if (child) {
 		sd->level = child->level + 1;
@@ -6570,7 +6578,6 @@ struct sched_domain *build_sched_domain(struct sched_domain_topology_level *tl,
 		child->parent = sd;
 	}
 	sd->child = child;
-	set_domain_attribute(sd, attr);
 
 	return sd;
 }
@@ -6597,14 +6604,17 @@ static int build_sched_domains(const struct cpumask *cpu_map,
 
 		sd = NULL;
 		for (tl = sched_domain_topology; tl->init; tl++) {
-			sd = build_sched_domain(tl, cpu_map, attr, sd, i);
-			if (tl == sched_domain_topology)
-				*per_cpu_ptr(d.sd, i) = sd;
+			sd = build_sched_domain(tl, &d, cpu_map, attr, sd, i);
 			if (tl->flags & SDTL_OVERLAP || sched_feat(FORCE_SD_OVERLAP))
 				sd->flags |= SD_OVERLAP;
 			if (cpumask_equal(cpu_map, sched_domain_span(sd)))
 				break;
 		}
+
+		while (sd->child)
+			sd = sd->child;
+
+		*per_cpu_ptr(d.sd, i) = sd;
 	}
 
 	/* Build the groups for the domains */
@@ -7132,7 +7142,6 @@ void __init sched_init(void)
 		rq->online = 0;
 		rq->idle_stamp = 0;
 		rq->avg_idle = 2*sysctl_sched_migration_cost;
-		rq->max_idle_balance_cost = sysctl_sched_migration_cost;
 
 		INIT_LIST_HEAD(&rq->cfs_tasks);
 

@@ -140,7 +140,8 @@ static int boost_mig_sync_thread(void *data)
 	unsigned long flags;
 
 	while(1) {
-		wait_event(s->sync_wq, s->pending || kthread_should_stop());
+		wait_event_interruptible(s->sync_wq, s->pending ||
+					kthread_should_stop());
 
 		if (kthread_should_stop())
 			break;
@@ -335,8 +336,6 @@ static int cpu_boost_init(void)
 	int cpu, ret;
 	struct cpu_sync *s;
 
-	cpufreq_register_notifier(&boost_adjust_nb, CPUFREQ_POLICY_NOTIFIER);
-
 	cpu_boost_wq = alloc_workqueue("cpuboost_wq", WQ_HIGHPRI, 0);
 	if (!cpu_boost_wq)
 		return -EFAULT;
@@ -354,10 +353,11 @@ static int cpu_boost_init(void)
 					"boost_sync/%d", cpu);
 		set_cpus_allowed(s->thread, *cpumask_of(cpu));
 	}
+	cpufreq_register_notifier(&boost_adjust_nb, CPUFREQ_POLICY_NOTIFIER);
 	atomic_notifier_chain_register(&migration_notifier_head,
 					&boost_migration_nb);
-
 	ret = input_register_handler(&cpuboost_input_handler);
+
 	return 0;
 }
 late_initcall(cpu_boost_init);

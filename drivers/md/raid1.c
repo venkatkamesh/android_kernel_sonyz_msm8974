@@ -2423,10 +2423,7 @@ static sector_t sync_request(struct mddev *mddev, sector_t sector_nr, int *skipp
 		/* There is nowhere to write, so all non-sync
 		 * drives must be failed - so we are finished
 		 */
-		sector_t rv;
-		if (min_bad > 0)
-			max_sector = sector_nr + min_bad;
-		rv = max_sector - sector_nr;
+		sector_t rv = max_sector - sector_nr;
 		*skipped = 1;
 		put_buf(r1_bio);
 		return rv;
@@ -2551,7 +2548,6 @@ static struct r1conf *setup_conf(struct mddev *mddev)
 	err = -EINVAL;
 	spin_lock_init(&conf->device_lock);
 	rdev_for_each(rdev, mddev) {
-		struct request_queue *q;
 		int disk_idx = rdev->raid_disk;
 		if (disk_idx >= mddev->raid_disks
 		    || disk_idx < 0)
@@ -2564,9 +2560,6 @@ static struct r1conf *setup_conf(struct mddev *mddev)
 		if (disk->rdev)
 			goto abort;
 		disk->rdev = rdev;
-		q = bdev_get_queue(rdev->bdev);
-		if (q->merge_bvec_fn)
-			mddev->merge_check_needed = 1;
 
 		disk->head_position = 0;
 	}

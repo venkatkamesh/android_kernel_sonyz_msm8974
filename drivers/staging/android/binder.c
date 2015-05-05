@@ -35,7 +35,6 @@
 #include <linux/vmalloc.h>
 #include <linux/slab.h>
 #include <linux/security.h>
-#include <linux/fdleak_dbg.h>
 
 #include "binder.h"
 
@@ -449,7 +448,6 @@ static void task_fd_install(
 	BUG_ON(fdt->fd[fd] != NULL);
 	rcu_assign_pointer(fdt->fd[fd], file);
 	spin_unlock(&files->file_lock);
-	warn_if_big_fd(fd, proc->tsk);
 }
 
 /*
@@ -1614,13 +1612,12 @@ static void binder_transaction(struct binder_proc *proc,
 		if (*offp > t->buffer->data_size - sizeof(*fp) ||
 		    *offp < off_min ||
 		    t->buffer->data_size < sizeof(*fp) ||
-		    !IS_ALIGNED(*offp, sizeof(void *))) {
-			binder_user_error("binder: %d:%d got transaction with "
-				"invalid offset, %zd (min %zd, max %zd)\n",
-				proc->pid, thread->pid, *offp,
-				off_min,
-				(size_t)(t->buffer->data_size -
-				sizeof(*fp)));
+		    !IS_ALIGNED(*offp, sizeof(u32))) {
+			binder_user_error("%d:%d got transaction with invalid offset, %lld (min %lld, max %lld)\n",
+					  proc->pid, thread->pid, (u64)*offp,
+					  (u64)off_min,
+					  (u64)(t->buffer->data_size -
+					  sizeof(*fp)));
 			return_error = BR_FAILED_REPLY;
 			goto err_bad_offset;
 		}
@@ -2626,27 +2623,6 @@ static struct binder_thread *binder_get_thread(struct binder_proc *proc)
 	return thread;
 }
 
-static struct binder_thread *binder_get_thread_by_tid(
-	struct binder_proc *proc, pid_t tid)
-{
-	struct binder_thread *thread = NULL;
-	struct rb_node *parent = NULL;
-	struct rb_node **p = &proc->threads.rb_node;
-
-	while (*p) {
-		parent = *p;
-		thread = rb_entry(parent, struct binder_thread, rb_node);
-
-		if (tid < thread->pid)
-			p = &(*p)->rb_left;
-		else if (tid > thread->pid)
-			p = &(*p)->rb_right;
-		else
-			break;
-	}
-	return thread;
-}
-
 static int binder_free_thread(struct binder_proc *proc,
 			      struct binder_thread *thread)
 {
@@ -2838,35 +2814,6 @@ static long binder_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			goto err;
 		}
 		break;
-	case BINDER_GET_PEER_PID: {
-		struct binder_get_peer peer;
-		struct binder_thread *thrd;
-		struct binder_transaction *t;
-		if (size != sizeof(struct binder_get_peer)) {
-			ret = -EINVAL;
-			goto err;
-		}
-		if (copy_from_user(&peer, ubuf, sizeof(peer))) {
-			ret = -EFAULT;
-			goto err;
-		}
-		peer.remote = 0;
-		thrd = binder_get_thread_by_tid(proc, peer.self);
-		/*
-		 * Check if the top of the stack is outgoing call or not,
-		 * and return its pid if true.
-		 */
-		if (thrd) {
-			t = thrd->transaction_stack;
-			if (t && t->from == thrd)
-				peer.remote = t->to_proc ? t->to_proc->pid : 0;
-		}
-		if (copy_to_user(ubuf, &peer, sizeof(peer))) {
-			ret = -EFAULT;
-			goto err;
-		}
-		break;
-	}
 	default:
 		ret = -EINVAL;
 		goto err;
@@ -2907,9 +2854,15 @@ static void binder_vma_close(struct vm_area_struct *vma)
 	binder_defer_work(proc, BINDER_DEFERRED_PUT_FILES);
 }
 
+static int binder_vm_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+{
+	return VM_FAULT_SIGBUS;
+}
+
 static struct vm_operations_struct binder_vm_ops = {
 	.open = binder_vma_open,
 	.close = binder_vma_close,
+	.fault = binder_vm_fault,
 };
 
 static int binder_mmap(struct file *filp, struct vm_area_struct *vma)

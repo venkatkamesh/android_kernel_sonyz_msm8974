@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2013 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2014 The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Sony Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -174,48 +174,6 @@ void hdmi_hdcp_aksv(u8 aksv[5], void *input)
 	aksv[3] = (qfprom_aksv_lsb >> 24) & 0xFF;
 	aksv[4] =  qfprom_aksv_msb        & 0xFF;
 } /* hdmi_hdcp_aksv */
-
-static void hdmi_hdcp_hw_ddc_clean(struct hdmi_hdcp_ctrl *hdcp_ctrl)
-{
-	struct dss_io_data *io = NULL;
-	u32 hdcp_ddc_status, ddc_hw_status;
-	u32 ddc_xfer_done, ddc_xfer_req, ddc_hw_done;
-	u32 ddc_hw_not_ready;
-	u32 timeout_count;
-
-	if (!hdcp_ctrl || !hdcp_ctrl->init_data.core_io) {
-		DEV_ERR("%s: invalid input\n", __func__);
-		return;
-	}
-
-	io = hdcp_ctrl->init_data.core_io;
-	if (!io->base) {
-			DEV_ERR("%s: core io not inititalized\n", __func__);
-			return;
-	}
-
-	if (DSS_REG_R(io, HDMI_DDC_HW_STATUS) != 0) {
-		/* Wait to be clean on DDC HW engine */
-		timeout_count = 100;
-		do {
-			hdcp_ddc_status = DSS_REG_R(io, HDMI_HDCP_DDC_STATUS);
-			ddc_hw_status = DSS_REG_R(io, HDMI_DDC_HW_STATUS);
-			ddc_xfer_done = (hdcp_ddc_status & BIT(10)) ;
-			ddc_xfer_req = (hdcp_ddc_status & BIT(4)) ;
-			ddc_hw_done = (ddc_hw_status & BIT(3)) ;
-			ddc_hw_not_ready = ((ddc_xfer_done != 1) ||
-			(ddc_xfer_req != 0) || (ddc_hw_done != 1));
-
-			DEV_DBG("%s: %s: timeout count(%d):ddc hw%sready\n",
-				__func__, HDCP_STATE_NAME, timeout_count,
-					ddc_hw_not_ready ? " not " : " ");
-			DEV_DBG("hdcp_ddc_status[0x%x], ddc_hw_status[0x%x]\n",
-					hdcp_ddc_status, ddc_hw_status);
-			if (ddc_hw_not_ready)
-				msleep(20);
-			} while (ddc_hw_not_ready && --timeout_count);
-	}
-} /* hdmi_hdcp_hw_ddc_clean */
 
 static int hdmi_hdcp_authentication_part1(struct hdmi_hdcp_ctrl *hdcp_ctrl)
 {
@@ -957,7 +915,6 @@ static void hdmi_hdcp_auth_work(struct work_struct *work)
 	struct delayed_work *dw = to_delayed_work(work);
 	struct hdmi_hdcp_ctrl *hdcp_ctrl = container_of(dw,
 		struct hdmi_hdcp_ctrl, hdcp_auth_work);
-	struct dss_io_data *io;
 
 	if (!hdcp_ctrl) {
 		DEV_ERR("%s: invalid input\n", __func__);
@@ -969,11 +926,6 @@ static void hdmi_hdcp_auth_work(struct work_struct *work)
 			HDCP_STATE_NAME);
 		return;
 	}
-
-	io = hdcp_ctrl->init_data.core_io;
-	/* Enabling Software DDC */
-	DSS_REG_W_ND(io, HDMI_DDC_ARBITRATION , DSS_REG_R(io,
-				HDMI_DDC_ARBITRATION) & ~(BIT(4)));
 
 	rc = hdmi_hdcp_authentication_part1(hdcp_ctrl);
 	if (rc) {
@@ -992,10 +944,6 @@ static void hdmi_hdcp_auth_work(struct work_struct *work)
 	} else {
 		DEV_INFO("%s: Downstream device is not a repeater\n", __func__);
 	}
-	/* Disabling software DDC before going into part3 to make sure
-	 * there is no Arbitration between software and hardware for DDC */
-	DSS_REG_W_ND(io, HDMI_DDC_ARBITRATION , DSS_REG_R(io,
-				HDMI_DDC_ARBITRATION) | (BIT(4)));
 
 error:
 	/*
@@ -1077,7 +1025,10 @@ static int hdmi_msm_if_abort_reauth(struct hdmi_hdcp_ctrl *hdcp_ctrl)
 	}
 
 	if (++hdcp_ctrl->auth_retries == AUTH_RETRIES_TIME) {
-		hdmi_hdcp_off(hdcp_ctrl, true);
+		mutex_lock(hdcp_ctrl->init_data.mutex);
+		hdcp_ctrl->hdcp_state = HDCP_STATE_INACTIVE;
+		mutex_unlock(hdcp_ctrl->init_data.mutex);
+
 		hdcp_ctrl->auth_retries = 0;
 		ret = -ERANGE;
 	}
@@ -1104,13 +1055,6 @@ int hdmi_hdcp_reauthenticate(void *input)
 		return 0;
 	}
 
-	ret = hdmi_msm_if_abort_reauth(hdcp_ctrl);
-
-	if (ret) {
-		DEV_ERR("%s: abort reauthentication!\n", __func__);
-		return ret;
-	}
-
 	/*
 	 * Disable HPD circuitry.
 	 * This is needed to reset the HDCP cipher engine so that when we
@@ -1125,8 +1069,12 @@ int hdmi_hdcp_reauthenticate(void *input)
 
 	DSS_REG_W(io, HDMI_HDCP_RESET, BIT(0));
 
-	/* Wait to be clean on DDC HW engine */
-	hdmi_hdcp_hw_ddc_clean(hdcp_ctrl);
+	/*
+	 * The DDC transaction for HDCP should be cleared before
+	 * shutdowining on the DDC for HDCP hw engin otherwise it goes into
+	 * bad state. So before clearing HDCP_CTRL register, wait some time.
+	 */
+	msleep(500);
 
 	/* Disable encryption and disable the HDCP block */
 	DSS_REG_W(io, HDMI_HDCP_CTRL, 0);
@@ -1135,6 +1083,13 @@ int hdmi_hdcp_reauthenticate(void *input)
 	DSS_REG_W(hdcp_ctrl->init_data.core_io, HDMI_HPD_CTRL,
 		DSS_REG_R(hdcp_ctrl->init_data.core_io,
 		HDMI_HPD_CTRL) | BIT(28));
+
+	ret = hdmi_msm_if_abort_reauth(hdcp_ctrl);
+
+	if (ret) {
+		DEV_ERR("%s: abort reauthentication!\n", __func__);
+		return ret;
+	}
 
 	/* Restart authentication attempt */
 	DEV_DBG("%s: %s: Scheduling work to start HDCP authentication",
@@ -1148,7 +1103,7 @@ int hdmi_hdcp_reauthenticate(void *input)
 	return ret;
 } /* hdmi_hdcp_reauthenticate */
 
-void hdmi_hdcp_off(void *input, bool isCurrentWork)
+void hdmi_hdcp_off(void *input)
 {
 	struct hdmi_hdcp_ctrl *hdcp_ctrl = (struct hdmi_hdcp_ctrl *)input;
 	struct dss_io_data *io;
@@ -1183,14 +1138,10 @@ void hdmi_hdcp_off(void *input, bool isCurrentWork)
 	 * No more reauthentiaction attempts will be scheduled since we
 	 * set the currect state to inactive.
 	 */
-	if (!isCurrentWork) {
-		rc = cancel_delayed_work_sync(&hdcp_ctrl->hdcp_auth_work);
-		if (rc)
-			DEV_DBG("%s: %s: Deleted hdcp auth work\n", __func__,
-				HDCP_STATE_NAME);
-	}
-	hdcp_ctrl->auth_retries = 0;
-
+	rc = cancel_delayed_work_sync(&hdcp_ctrl->hdcp_auth_work);
+	if (rc)
+		DEV_DBG("%s: %s: Deleted hdcp auth work\n", __func__,
+			HDCP_STATE_NAME);
 	rc = cancel_work_sync(&hdcp_ctrl->hdcp_int_work);
 	if (rc)
 		DEV_DBG("%s: %s: Deleted hdcp int work\n", __func__,

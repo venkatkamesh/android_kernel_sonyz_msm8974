@@ -16,7 +16,6 @@
 
 #include <linux/init.h>
 #include <linux/export.h>
-#include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/fs.h>
 #include <linux/namei.h>
@@ -1453,8 +1452,7 @@ EXPORT_SYMBOL(full_name_hash);
  */
 static inline unsigned long hash_name(const char *name, unsigned int *hashp)
 {
-	unsigned long a, b, adata, bdata, mask, hash, len;
-	const struct word_at_a_time constants = WORD_AT_A_TIME_CONSTANTS;
+	unsigned long a, mask, hash, len;
 
 	hash = a = 0;
 	len = -sizeof(unsigned long);
@@ -1463,18 +1461,16 @@ static inline unsigned long hash_name(const char *name, unsigned int *hashp)
 		len += sizeof(unsigned long);
 		a = load_unaligned_zeropad(name+len);
 		/* Do we have any NUL or '/' bytes in this word? */
-		b = a ^ REPEAT_BYTE('/');
-	} while (!(has_zero(a, &adata, &constants) | has_zero(b, &bdata, &constants)));
- 
-	adata = prep_zero_mask(a, adata, &constants);
-	bdata = prep_zero_mask(b, bdata, &constants);
+		mask = has_zero(a) | has_zero(a ^ REPEAT_BYTE('/'));
+	} while (!mask);
 
-	mask = create_zero_mask(adata | bdata);
+	/* The mask *below* the first high bit set */
+	mask = (mask - 1) & ~mask;
+	mask >>= 7;
+	hash += a & mask;
+	*hashp = fold_hash(hash);
 
-	hash += a & zero_bytemask(mask);
- 	*hashp = fold_hash(hash);
- 
-	return len + find_zero(mask);
+	return len + count_masked_bytes(mask);
 }
 
 #else
@@ -2076,6 +2072,13 @@ int vfs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 	if (error)
 		return error;
 	error = dir->i_op->create(dir, dentry, mode, nd);
+	if (error)
+		return error;
+
+	error = security_inode_post_create(dir, dentry, mode);
+	if (error)
+		return error;
+
 	if (!error)
 		fsnotify_create(dir, dentry);
 	return error;
@@ -2551,6 +2554,13 @@ int vfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode, dev_t dev)
 		return error;
 
 	error = dir->i_op->mknod(dir, dentry, mode, dev);
+	if (error)
+		return error;
+
+	error = security_inode_post_create(dir, dentry, mode);
+	if (error)
+		return error;
+
 	if (!error)
 		fsnotify_create(dir, dentry);
 	return error;

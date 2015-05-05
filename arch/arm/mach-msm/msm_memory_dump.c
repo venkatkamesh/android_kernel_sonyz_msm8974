@@ -84,9 +84,6 @@ static int msm_export_last_regs(void)
 	if (!last_regs_base || !last_regs_size)
 		return -EINVAL;
 
-	printk(KERN_INFO "%s: exporting HWWD context as /proc/last_regs\n",
-		__func__);
-
 	last_regs_buf = kmalloc(last_regs_size, GFP_KERNEL);
 	if (!last_regs_buf) {
 		printk(KERN_ERR "%s: failed to allocate last_regs_buf\n",
@@ -208,7 +205,8 @@ static int __init init_memory_dump(void)
 	mem_dump_data.dump_table_phys = virt_to_phys(table);
 	writel_relaxed(mem_dump_data.dump_table_phys,
 				MSM_IMEM_BASE + DUMP_TABLE_OFFSET);
-	msm_export_last_regs();
+	if (!msm_export_last_regs())
+		printk(KERN_INFO "exported HWWD context as /proc/last_regs\n");
 	printk(KERN_INFO "MSM Memory Dump table set up\n");
 	return 0;
 }

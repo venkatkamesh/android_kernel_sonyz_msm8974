@@ -13,6 +13,7 @@
 #define __WCD9XXX_MBHC_H__
 
 #include "wcd9xxx-resmgr.h"
+#include "wcdcal-hwdep.h"
 
 #define WCD9XXX_CFILT_FAST_MODE 0x00
 #define WCD9XXX_CFILT_SLOW_MODE 0x40
@@ -97,6 +98,7 @@ enum wcd9xx_mbhc_cs_enable_bits {
 	MBHC_CS_ENABLE_POLLING,
 	MBHC_CS_ENABLE_INSERTION,
 	MBHC_CS_ENABLE_REMOVAL,
+	MBHC_CS_ENABLE_DET_ANC,
 };
 
 enum wcd9xxx_mbhc_state {
@@ -266,9 +268,12 @@ struct wcd9xxx_mbhc_cb {
 			   enum mbhc_impedance_detect_stages stage);
 	void (*compute_impedance) (s16 *, s16 *, uint32_t *, uint32_t *);
 	void (*enable_mbhc_txfe) (struct snd_soc_codec *, bool);
-	int (*enable_mb_source) (struct snd_soc_codec *, bool);
+	int (*enable_mb_source) (struct snd_soc_codec *, bool, bool);
 	void (*setup_int_rbias) (struct snd_soc_codec *, bool);
 	void (*pull_mb_to_vddio) (struct snd_soc_codec *, bool);
+	struct firmware_cal * (*get_hwdep_fw_cal) (struct snd_soc_codec *,
+				enum wcd_cal_type);
+
 };
 
 struct wcd9xxx_mbhc {
@@ -294,6 +299,7 @@ struct wcd9xxx_mbhc {
 	const struct firmware *mbhc_fw;
 
 	struct delayed_work mbhc_insert_dwork;
+	struct firmware_cal *mbhc_cal;
 
 	u8 current_plug;
 	struct work_struct correct_plug_swch;
@@ -347,6 +353,8 @@ struct wcd9xxx_mbhc {
 	struct dentry *debugfs_poke;
 	struct dentry *debugfs_mbhc;
 #endif
+
+	struct mutex mbhc_lock;
 };
 
 #define WCD9XXX_MBHC_CAL_SIZE(buttons, rload) ( \

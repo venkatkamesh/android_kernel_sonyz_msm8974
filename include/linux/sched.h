@@ -122,10 +122,10 @@ extern void get_avenrun(unsigned long *loads, unsigned long offset, int shift);
 
 #define FSHIFT		11		/* nr of bits of precision */
 #define FIXED_1		(1<<FSHIFT)	/* 1.0 as fixed-point */
-#define LOAD_FREQ      (4*HZ+61)       /* 4.61 sec intervals */
-#define EXP_1          1896            /* 1/exp(4.61sec/1min) as fixed-point */
-#define EXP_5          2017            /* 1/exp(4.61sec/5min) */
-#define EXP_15         2038            /* 1/exp(4.61sec/15min) */
+#define LOAD_FREQ	(5*HZ+1)	/* 5 sec intervals */
+#define EXP_1		1884		/* 1/exp(5sec/1min) as fixed-point */
+#define EXP_5		2014		/* 1/exp(5sec/5min) */
+#define EXP_15		2037		/* 1/exp(5sec/15min) */
 
 #define CALC_LOAD(load,exp,n) \
 	load *= exp; \
@@ -193,10 +193,9 @@ print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 #define TASK_DEAD		64
 #define TASK_WAKEKILL		128
 #define TASK_WAKING		256
-#define TASK_PARKED		512
-#define TASK_STATE_MAX		1024
+#define TASK_STATE_MAX		512
 
-#define TASK_STATE_TO_CHAR_STR "RSDTtZXxKWP"
+#define TASK_STATE_TO_CHAR_STR "RSDTtZXxKW"
 
 extern char ___assert_task_state[1 - 2*!!(
 		sizeof(TASK_STATE_TO_CHAR_STR)-1 != ilog2(TASK_STATE_MAX)+1)];
@@ -993,10 +992,6 @@ struct sched_domain {
 	unsigned int nr_balance_failed; /* initialise to 0 */
 
 	u64 last_update;
-
-	/* idle_balance() stats */
-	u64 max_newidle_lb_cost;
-	unsigned long next_decay_max_lb_cost;
 
 #ifdef CONFIG_SCHEDSTATS
 	/* load_balance() stats */
@@ -2851,16 +2846,6 @@ static inline unsigned long rlimit_max(unsigned int limit)
 {
 	return task_rlimit_max(current, limit);
 }
-
-#ifdef CONFIG_CGROUP_TIMER_SLACK
-extern unsigned long task_get_effective_timer_slack(struct task_struct *tsk);
-#else
-static inline unsigned long task_get_effective_timer_slack(
-		struct task_struct *tsk)
- {
- 	return tsk->timer_slack_ns;
- }
-#endif
 
 #endif /* __KERNEL__ */
 

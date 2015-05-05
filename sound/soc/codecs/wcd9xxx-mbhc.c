@@ -1,5 +1,5 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
- * Copyright (C) 2013 Sony Mobile Communications AB.
+/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2013 Sony Mobile Communications Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -9,6 +9,10 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
+ *
+ * NOTE: This file has been modified by Sony Mobile Communications Inc.
+ * Modifications are Copyright (C) 2015 Sony Mobile Communications Inc.,
+ * and licensed under the license of the file.
  */
 #include <linux/module.h>
 #include <linux/init.h>
@@ -36,6 +40,7 @@
 #include <linux/kernel.h>
 #include <linux/gpio.h>
 #include <linux/input.h>
+#include "wcdcal-hwdep.h"
 #include "wcd9320.h"
 #include "wcd9306.h"
 #include "wcd9xxx-mbhc.h"
@@ -43,8 +48,7 @@
 #include "wcd9xxx-common.h"
 
 #define WCD9XXX_JACK_MASK (SND_JACK_HEADSET | SND_JACK_OC_HPHL | \
-			   SND_JACK_OC_HPHR | SND_JACK_LINEOUT | \
-			   SND_JACK_UNSUPPORTED)
+			   SND_JACK_OC_HPHR | SND_JACK_UNSUPPORTED)
 #define WCD9XXX_JACK_BUTTON_MASK (SND_JACK_BTN_0 | SND_JACK_BTN_1 | \
 				  SND_JACK_BTN_2 | SND_JACK_BTN_3 | \
 				  SND_JACK_BTN_4 | SND_JACK_BTN_5 | \
@@ -65,6 +69,7 @@
 #define BUTTON_MIN 0x8000
 #define STATUS_REL_DETECTION 0x0C
 
+#define ANC_HPH_DETECT_PLUG_TIME_MS (5 * 1000)
 #define HS_DETECT_PLUG_TIME_MS 1000
 #define HS_DETECT_PLUG_INERVAL_MS 100
 #define SWCH_REL_DEBOUNCE_TIME_MS 50
@@ -75,7 +80,7 @@
 #define OCP_ATTEMPT 1
 
 #define FW_READ_ATTEMPTS 15
-#define FW_READ_TIMEOUT 2000000
+#define FW_READ_TIMEOUT 4000000
 
 #define BUTTON_POLLING_SUPPORTED true
 
@@ -190,7 +195,7 @@ static void wcd9xxx_mbhc_calc_thres(struct wcd9xxx_mbhc *mbhc);
 
 static bool wcd9xxx_mbhc_polling(struct wcd9xxx_mbhc *mbhc)
 {
-	return mbhc->polling_active;
+	return snd_soc_read(mbhc->codec, WCD9XXX_A_CDC_MBHC_EN_CTL) & 0x1;
 }
 
 static void wcd9xxx_turn_onoff_override(struct wcd9xxx_mbhc *mbhc, bool on)
@@ -544,13 +549,13 @@ static void wcd9xxx_codec_switch_cfilt_mode(struct wcd9xxx_mbhc *mbhc,
 
 	if (cfilt_mode.cur_mode_val
 			!= cfilt_mode.reg_mode_val) {
-		if (mbhc->polling_active)
+		if (mbhc->polling_active && wcd9xxx_mbhc_polling(mbhc))
 			wcd9xxx_pause_hs_polling(mbhc);
 		snd_soc_update_bits(codec,
 				    mbhc->mbhc_bias_regs.cfilt_ctl,
 					cfilt_mode.reg_mask,
 					cfilt_mode.reg_mode_val);
-		if (mbhc->polling_active)
+		if (mbhc->polling_active && wcd9xxx_mbhc_polling(mbhc))
 			wcd9xxx_start_hs_polling(mbhc);
 		pr_debug("%s: CFILT mode change (%x to %x)\n", __func__,
 			cfilt_mode.cur_mode_val,
@@ -1121,7 +1126,7 @@ static short wcd9xxx_mbhc_setup_hs_polling(struct wcd9xxx_mbhc *mbhc,
 	btn_det = WCD9XXX_MBHC_CAL_BTN_DET_PTR(mbhc->mbhc_cfg->calibration);
 	/* Enable external voltage source to micbias if present */
 	if (mbhc->mbhc_cb && mbhc->mbhc_cb->enable_mb_source)
-		mbhc->mbhc_cb->enable_mb_source(codec, true);
+		mbhc->mbhc_cb->enable_mb_source(codec, true, true);
 
 	/*
 	 * setup internal micbias if codec uses internal micbias for
@@ -1259,7 +1264,7 @@ static void wcd9xxx_cleanup_hs_polling(struct wcd9xxx_mbhc *mbhc)
 
 	/* Disable external voltage source to micbias if present */
 	if (mbhc->mbhc_cb && mbhc->mbhc_cb->enable_mb_source)
-		mbhc->mbhc_cb->enable_mb_source(mbhc->codec, false);
+		mbhc->mbhc_cb->enable_mb_source(mbhc->codec, false, true);
 
 	mbhc->polling_active = false;
 	mbhc->mbhc_state = MBHC_STATE_NONE;
@@ -1559,7 +1564,7 @@ wcd9xxx_find_plug_type(struct wcd9xxx_mbhc *mbhc,
 			continue;
 		}
 
-		if ((i > 0) && (d->_type != dprev->_type)) {
+		if ((i > 0) && (dprev != NULL) && (d->_type != dprev->_type)) {
 			pr_debug("%s: Invalid, inconsistent types\n", __func__);
 			type = PLUG_TYPE_INVALID;
 			goto exit;
@@ -1613,9 +1618,9 @@ wcd9xxx_find_plug_type(struct wcd9xxx_mbhc *mbhc,
 		}
 	}
 
-	if (type == PLUG_TYPE_HEADSET && dvddio) {
-		if ((dvddio->_vdces > hs_max) ||
-		    (dvddio->_vdces > minv + WCD9XXX_THRESHOLD_MIC_THRESHOLD)) {
+	if (type == PLUG_TYPE_HEADSET) {
+		if (dvddio && ((dvddio->_vdces > hs_max) ||
+		   (dvddio->_vdces > minv + WCD9XXX_THRESHOLD_MIC_THRESHOLD))) {
 			pr_debug("%s: Headset with threshold on MIC detected\n",
 				 __func__);
 			if (mbhc->mbhc_cfg->micbias_enable_flags &
@@ -1676,10 +1681,10 @@ static int wcd9xxx_pull_down_micbias(struct wcd9xxx_mbhc *mbhc, int us)
 	return 0;
 }
 
-void wcd9xxx_turn_onoff_current_source(struct wcd9xxx_mbhc *mbhc, bool on,
-				       bool highhph)
+void wcd9xxx_turn_onoff_current_source(struct wcd9xxx_mbhc *mbhc,
+				       struct mbhc_micbias_regs *mbhc_micb_regs,
+				       bool on, bool highhph)
 {
-
 	struct snd_soc_codec *codec;
 	struct wcd9xxx_mbhc_btn_detect_cfg *btn_det;
 	const struct wcd9xxx_mbhc_plug_detect_cfg *plug_det =
@@ -1694,7 +1699,7 @@ void wcd9xxx_turn_onoff_current_source(struct wcd9xxx_mbhc *mbhc, bool on,
 		snd_soc_update_bits(codec, WCD9XXX_A_CDC_MBHC_B1_CTL,
 				    0x78, 0x48);
 		/* pull down diode bit to 0 */
-		snd_soc_update_bits(codec, mbhc->mbhc_bias_regs.mbhc_reg,
+		snd_soc_update_bits(codec, mbhc_micb_regs->mbhc_reg,
 				    0x01, 0x00);
 		/*
 		 * Keep the low power insertion/removal
@@ -1709,7 +1714,7 @@ void wcd9xxx_turn_onoff_current_source(struct wcd9xxx_mbhc *mbhc, bool on,
 		 * (INS_DET_ISRC_EN__ENABLE)
 		 * MICB_2_MBHC__SCHT_TRIG_EN to 1
 		 */
-		snd_soc_update_bits(codec, mbhc->mbhc_bias_regs.mbhc_reg,
+		snd_soc_update_bits(codec, mbhc_micb_regs->mbhc_reg,
 				    0xF0, 0xF0);
 		/* Disconnect MBHC Override from MicBias and LDOH */
 		snd_soc_update_bits(codec, WCD9XXX_A_MAD_ANA_CTRL, 0x10, 0x00);
@@ -1718,16 +1723,16 @@ void wcd9xxx_turn_onoff_current_source(struct wcd9xxx_mbhc *mbhc, bool on,
 		/* Connect MBHC Override from MicBias and LDOH */
 		snd_soc_update_bits(codec, WCD9XXX_A_MAD_ANA_CTRL, 0x10, 0x10);
 		/* INS_DET_ISRC_CTL to acdb value */
-		snd_soc_update_bits(codec, mbhc->mbhc_bias_regs.mbhc_reg,
+		snd_soc_update_bits(codec, mbhc_micb_regs->mbhc_reg,
 				    0x60, plug_det->mic_current << 5);
 		if (!highhph) {
 			/* INS_DET_ISRC_EN__ENABLE to 0 */
 			snd_soc_update_bits(codec,
-					    mbhc->mbhc_bias_regs.mbhc_reg,
+					    mbhc_micb_regs->mbhc_reg,
 					    0x80, 0x00);
 			/* MICB_2_MBHC__SCHT_TRIG_EN  to 0 */
 			snd_soc_update_bits(codec,
-					    mbhc->mbhc_bias_regs.mbhc_reg,
+					    mbhc_micb_regs->mbhc_reg,
 					    0x10, 0x00);
 		}
 		/* Nsc to acdb value */
@@ -1766,11 +1771,15 @@ wcd9xxx_codec_cs_get_plug_type(struct wcd9xxx_mbhc *mbhc, bool highhph)
 			wcd9xxx_codec_hphr_gnd_switch(codec, true);
 
 		if (rt[i].mic_bias)
-			wcd9xxx_turn_onoff_current_source(mbhc, false, false);
+			wcd9xxx_turn_onoff_current_source(mbhc,
+							  &mbhc->mbhc_bias_regs,
+							  false, false);
 
 		rt[i].dce = __wcd9xxx_codec_sta_dce(mbhc, 1, !highhph, true);
 		if (rt[i].mic_bias)
-			wcd9xxx_turn_onoff_current_source(mbhc, true, false);
+			wcd9xxx_turn_onoff_current_source(mbhc,
+							  &mbhc->mbhc_bias_regs,
+							  true, false);
 		if (rt[i].swap_gnd)
 			wcd9xxx_codec_hphr_gnd_switch(codec, false);
 	}
@@ -2108,9 +2117,11 @@ static void wcd9xxx_mbhc_decide_swch_plug(struct wcd9xxx_mbhc *mbhc)
 				     mbhc->mbhc_bias_regs.ctl_reg) & 0x80)));
 
 	if (current_source_enable) {
-		wcd9xxx_turn_onoff_current_source(mbhc, true, false);
+		wcd9xxx_turn_onoff_current_source(mbhc, &mbhc->mbhc_bias_regs,
+						  true, false);
 		plug_type = wcd9xxx_codec_cs_get_plug_type(mbhc, false);
-		wcd9xxx_turn_onoff_current_source(mbhc, false, false);
+		wcd9xxx_turn_onoff_current_source(mbhc, &mbhc->mbhc_bias_regs,
+						  false, false);
 	} else {
 		wcd9xxx_turn_onoff_override(mbhc, true);
 		plug_type = wcd9xxx_codec_get_plug_type(mbhc, true);
@@ -2235,7 +2246,8 @@ static bool wcd9xxx_hs_remove_settle(struct wcd9xxx_mbhc *mbhc)
 		     (!(snd_soc_read(mbhc->codec,
 				     mbhc->mbhc_bias_regs.ctl_reg) & 0x80)));
 	if (cs_enable)
-		wcd9xxx_turn_onoff_current_source(mbhc, true, false);
+		wcd9xxx_turn_onoff_current_source(mbhc, &mbhc->mbhc_bias_regs,
+						  true, false);
 
 	timeout = jiffies + msecs_to_jiffies(HS_DETECT_PLUG_TIME_MS);
 	while (!(timedout = time_after(jiffies, timeout))) {
@@ -2303,7 +2315,8 @@ static bool wcd9xxx_hs_remove_settle(struct wcd9xxx_mbhc *mbhc)
 	}
 
 	if (cs_enable)
-		wcd9xxx_turn_onoff_current_source(mbhc, false, false);
+		wcd9xxx_turn_onoff_current_source(mbhc, &mbhc->mbhc_bias_regs,
+						  false, false);
 
 	if (timedout)
 		pr_debug("%s: Microphone did not settle in %d seconds\n",
@@ -2351,7 +2364,8 @@ static void wcd9xxx_hs_remove_irq_noswch(struct wcd9xxx_mbhc *mbhc)
 		     (!(snd_soc_read(codec,
 				     mbhc->mbhc_bias_regs.ctl_reg) & 0x80)));
 	if (cs_enable)
-		wcd9xxx_turn_onoff_current_source(mbhc, true, false);
+		wcd9xxx_turn_onoff_current_source(mbhc, &mbhc->mbhc_bias_regs,
+						  true, false);
 
 	timeout = jiffies + msecs_to_jiffies(FAKE_REMOVAL_MIN_PERIOD_MS);
 	do {
@@ -2382,7 +2396,8 @@ static void wcd9xxx_hs_remove_irq_noswch(struct wcd9xxx_mbhc *mbhc)
 		  removed ? "" : "not ");
 
 	if (cs_enable)
-		wcd9xxx_turn_onoff_current_source(mbhc, false, false);
+		wcd9xxx_turn_onoff_current_source(mbhc, &mbhc->mbhc_bias_regs,
+						  false, false);
 
 	if (removed) {
 		if (mbhc->mbhc_cfg->detect_extn_cable) {
@@ -2561,35 +2576,39 @@ static void wcd9xxx_mbhc_insert_work(struct work_struct *work)
 	wcd9xxx_unlock_sleep(core_res);
 }
 
-static bool wcd9xxx_mbhc_fw_validate(const struct firmware *fw)
+static bool wcd9xxx_mbhc_fw_validate(const void *data, size_t size)
 {
 	u32 cfg_offset;
 	struct wcd9xxx_mbhc_imped_detect_cfg *imped_cfg;
 	struct wcd9xxx_mbhc_btn_detect_cfg *btn_cfg;
+	struct firmware_cal fw;
 
-	if (fw->size < WCD9XXX_MBHC_CAL_MIN_SIZE)
+	fw.data = (void *)data;
+	fw.size = size;
+
+	if (fw.size < WCD9XXX_MBHC_CAL_MIN_SIZE)
 		return false;
 
 	/*
 	 * Previous check guarantees that there is enough fw data up
 	 * to num_btn
 	 */
-	btn_cfg = WCD9XXX_MBHC_CAL_BTN_DET_PTR(fw->data);
-	cfg_offset = (u32) ((void *) btn_cfg - (void *) fw->data);
-	if (fw->size < (cfg_offset + WCD9XXX_MBHC_CAL_BTN_SZ(btn_cfg)))
+        btn_cfg = WCD9XXX_MBHC_CAL_BTN_DET_PTR(fw.data);
+        cfg_offset = (u32) ((void *) btn_cfg - (void *) fw.data);
+        if (fw.size < (cfg_offset + WCD9XXX_MBHC_CAL_BTN_SZ(btn_cfg)))
 		return false;
 
 	/*
 	 * Previous check guarantees that there is enough fw data up
 	 * to start of impedance detection configuration
 	 */
-	imped_cfg = WCD9XXX_MBHC_CAL_IMPED_DET_PTR(fw->data);
-	cfg_offset = (u32) ((void *) imped_cfg - (void *) fw->data);
+        imped_cfg = WCD9XXX_MBHC_CAL_IMPED_DET_PTR(fw.data);
+        cfg_offset = (u32) ((void *) imped_cfg - (void *) fw.data);
 
-	if (fw->size < (cfg_offset + WCD9XXX_MBHC_CAL_IMPED_MIN_SZ))
+	if (fw.size < (cfg_offset + WCD9XXX_MBHC_CAL_IMPED_MIN_SZ))
 		return false;
 
-	if (fw->size < (cfg_offset + WCD9XXX_MBHC_CAL_IMPED_SZ(imped_cfg)))
+	if (fw.size < (cfg_offset + WCD9XXX_MBHC_CAL_IMPED_SZ(imped_cfg)))
 		return false;
 
 	return true;
@@ -2764,8 +2783,8 @@ static void wcd9xxx_correct_swch_plug(struct work_struct *work)
 	 * headphone detection.
 	 */
 	if (current_source_enable)
-		wcd9xxx_turn_onoff_current_source(mbhc, true,
-						  false);
+		wcd9xxx_turn_onoff_current_source(mbhc, &mbhc->mbhc_bias_regs,
+						  true, false);
 	else
 		wcd9xxx_turn_onoff_override(mbhc, true);
 
@@ -2807,11 +2826,14 @@ static void wcd9xxx_correct_swch_plug(struct work_struct *work)
 			if (!mbhc->mbhc_cfg->detect_extn_cable &&
 			    retry == NUM_ATTEMPTS_TO_REPORT &&
 			    mbhc->current_plug == PLUG_TYPE_NONE) {
+				WCD9XXX_BCL_LOCK(mbhc->resmgr);
 				wcd9xxx_report_plug(mbhc, 1,
 						    SND_JACK_HEADPHONE);
+				WCD9XXX_BCL_UNLOCK(mbhc->resmgr);
 			}
 		} else if (plug_type == PLUG_TYPE_HEADPHONE) {
 			pr_debug("Good headphone detected, continue polling\n");
+			WCD9XXX_BCL_LOCK(mbhc->resmgr);
 			if (mbhc->mbhc_cfg->detect_extn_cable) {
 				if (mbhc->current_plug != plug_type)
 					wcd9xxx_report_plug(mbhc, 1,
@@ -2820,6 +2842,7 @@ static void wcd9xxx_correct_swch_plug(struct work_struct *work)
 				wcd9xxx_report_plug(mbhc, 1,
 						    SND_JACK_HEADPHONE);
 			}
+			WCD9XXX_BCL_UNLOCK(mbhc->resmgr);
 		} else if (plug_type == PLUG_TYPE_HIGH_HPH) {
 			pr_debug("%s: High HPH detected, continue polling\n",
 				  __func__);
@@ -2849,8 +2872,9 @@ static void wcd9xxx_correct_swch_plug(struct work_struct *work)
 			WCD9XXX_BCL_LOCK(mbhc->resmgr);
 			/* Turn off override/current source */
 			if (current_source_enable)
-				wcd9xxx_turn_onoff_current_source(mbhc, false,
-								  false);
+				wcd9xxx_turn_onoff_current_source(mbhc,
+							  &mbhc->mbhc_bias_regs,
+							  false, false);
 			else
 				wcd9xxx_turn_onoff_override(mbhc, false);
 			/*
@@ -2876,7 +2900,8 @@ static void wcd9xxx_correct_swch_plug(struct work_struct *work)
 	}
 
 	if (!correction && current_source_enable)
-		wcd9xxx_turn_onoff_current_source(mbhc, false, highhph);
+		wcd9xxx_turn_onoff_current_source(mbhc, &mbhc->mbhc_bias_regs,
+						  false, highhph);
 	else if (!correction)
 		wcd9xxx_turn_onoff_override(mbhc, false);
 
@@ -2918,16 +2943,15 @@ static void wcd9xxx_swch_irq_handler(struct wcd9xxx_mbhc *mbhc)
 	if (wcd9xxx_cancel_btn_work(mbhc))
 		pr_debug("%s: button press is canceled\n", __func__);
 
-	/* cancel detect plug */
-	wcd9xxx_cancel_hs_detect_plug(mbhc,
-				      &mbhc->correct_plug_swch);
-
 	insert = !wcd9xxx_swch_level_remove(mbhc);
 	pr_debug("%s: Current plug type %d, insert %d\n", __func__,
 		 mbhc->current_plug, insert);
 	if ((mbhc->current_plug == PLUG_TYPE_NONE) && insert) {
 		mbhc->lpi_enabled = false;
 		wmb();
+		/* cancel detect plug */
+		wcd9xxx_cancel_hs_detect_plug(mbhc,
+				      &mbhc->correct_plug_swch);
 
 		if ((mbhc->current_plug != PLUG_TYPE_NONE) &&
 		    !(snd_soc_read(codec, WCD9XXX_A_MBHC_INSERT_DETECT) &
@@ -2942,6 +2966,9 @@ static void wcd9xxx_swch_irq_handler(struct wcd9xxx_mbhc *mbhc)
 	} else if ((mbhc->current_plug != PLUG_TYPE_NONE) && !insert) {
 		mbhc->lpi_enabled = false;
 		wmb();
+		/* cancel detect plug */
+		wcd9xxx_cancel_hs_detect_plug(mbhc,
+				      &mbhc->correct_plug_swch);
 
 		if (mbhc->current_plug == PLUG_TYPE_HEADPHONE) {
 			wcd9xxx_report_plug(mbhc, 0, SND_JACK_HEADPHONE);
@@ -3165,7 +3192,8 @@ void wcd9xxx_update_z(struct wcd9xxx_mbhc *mbhc)
  * wcd9xxx_update_rel_threshold : update mbhc release upper bound threshold
  *				  to ceilmv + buffer
  */
-static int wcd9xxx_update_rel_threshold(struct wcd9xxx_mbhc *mbhc, int ceilmv)
+static int wcd9xxx_update_rel_threshold(struct wcd9xxx_mbhc *mbhc, int ceilmv,
+					bool vddio)
 {
 	u16 v_brh, v_b1_hu;
 	int mv;
@@ -3175,6 +3203,8 @@ static int wcd9xxx_update_rel_threshold(struct wcd9xxx_mbhc *mbhc, int ceilmv)
 
 	btn_det = WCD9XXX_MBHC_CAL_BTN_DET_PTR(calibration);
 	mv = ceilmv + btn_det->v_btn_press_delta_cic;
+	if (vddio)
+		mv = scale_v_micb_vddio(mbhc, mv, true);
 	pr_debug("%s: reprogram vb1hu/vbrh to %dmv\n", __func__, mv);
 
 	if (mbhc->mbhc_state != MBHC_STATE_POTENTIAL_RECOVERY) {
@@ -3220,6 +3250,7 @@ irqreturn_t wcd9xxx_dce_handler(int irq, void *data)
 	pr_debug("%s: enter\n", __func__);
 
 	WCD9XXX_BCL_LOCK(mbhc->resmgr);
+	mutex_lock(&mbhc->mbhc_lock);
 	mbhc_status = snd_soc_read(codec, WCD9XXX_A_CDC_MBHC_B1_STATUS) & 0x3E;
 
 	if (mbhc->mbhc_state == MBHC_STATE_POTENTIAL_RECOVERY) {
@@ -3375,7 +3406,9 @@ irqreturn_t wcd9xxx_dce_handler(int irq, void *data)
 						       MBHC_BTN_DET_V_BTN_HIGH);
 		WARN_ON(btn >= btn_det->num_btn);
 		/* reprogram release threshold to catch voltage ramp up early */
-		wcd9xxx_update_rel_threshold(mbhc, v_btn_high[btn]);
+		wcd9xxx_update_rel_threshold(mbhc,
+				v_btn_high[btn_det->num_btn - 1],
+				vddio);
 
 		mask = wcd9xxx_get_button_mask(btn);
 		mbhc->buttons_pressed |= mask;
@@ -3392,6 +3425,7 @@ irqreturn_t wcd9xxx_dce_handler(int irq, void *data)
 
  done:
 	pr_debug("%s: leave\n", __func__);
+	mutex_unlock(&mbhc->mbhc_lock);
 	WCD9XXX_BCL_UNLOCK(mbhc->resmgr);
 	return IRQ_HANDLED;
 }
@@ -3598,7 +3632,7 @@ static void wcd9xxx_mbhc_cal(struct wcd9xxx_mbhc *mbhc)
 	 * turn on the external voltage source for Calibration.
 	 */
 	if (mbhc->mbhc_cb && mbhc->mbhc_cb->enable_mb_source)
-		mbhc->mbhc_cb->enable_mb_source(codec, true);
+		mbhc->mbhc_cb->enable_mb_source(codec, true, false);
 
 	cfilt_mode = snd_soc_read(codec, mbhc->mbhc_bias_regs.cfilt_ctl);
 	if (mbhc->mbhc_cb && mbhc->mbhc_cb->cfilt_fast_mode)
@@ -3720,7 +3754,7 @@ static void wcd9xxx_mbhc_cal(struct wcd9xxx_mbhc *mbhc)
 	usleep_range(100, 100);
 
 	if (mbhc->mbhc_cb && mbhc->mbhc_cb->enable_mb_source)
-		mbhc->mbhc_cb->enable_mb_source(codec, false);
+		mbhc->mbhc_cb->enable_mb_source(codec, false, false);
 
 	wcd9xxx_enable_irq(mbhc->resmgr->core_res,
 			   mbhc->intr_ids->dce_est_complete);
@@ -3882,7 +3916,9 @@ static void wcd9xxx_mbhc_fw_read(struct work_struct *work)
 	struct wcd9xxx_mbhc *mbhc;
 	struct snd_soc_codec *codec;
 	const struct firmware *fw;
+        struct firmware_cal *fw_data = NULL;
 	int ret = -1, retry = 0;
+	bool use_default_cal = false;
 
 	dwork = to_delayed_work(work);
 	mbhc = container_of(dwork, struct wcd9xxx_mbhc, mbhc_firmware_dwork);
@@ -3890,29 +3926,62 @@ static void wcd9xxx_mbhc_fw_read(struct work_struct *work)
 
 	while (retry < FW_READ_ATTEMPTS) {
 		retry++;
-		pr_info("%s:Attempt %d to request MBHC firmware\n",
-			__func__, retry);
-		ret = request_firmware(&fw, "wcd9320/wcd9320_mbhc.bin",
-				       codec->dev);
-
-		if (ret != 0) {
+		pr_debug("%s:Attempt %d to request MBHC firmware\n",
+                               __func__, retry);
+		if (mbhc->mbhc_cb->get_hwdep_fw_cal)
+			fw_data = mbhc->mbhc_cb->get_hwdep_fw_cal(codec,
+					WCD9XXX_MBHC_CAL);
+		if (!fw_data)
+			ret = request_firmware(&fw, "wcd9320/wcd9320_mbhc.bin",
+                                       codec->dev);
+		/*
+		* if request_firmware and hwdep cal both fail then
+		* retry for few times before bailing out
+		*/
+		if ((ret != 0) && !fw_data) {
 			usleep_range(FW_READ_TIMEOUT, FW_READ_TIMEOUT);
 		} else {
 			pr_info("%s: MBHC Firmware read succesful\n", __func__);
 			break;
 		}
 	}
-
-	if (ret != 0) {
+	if (!fw_data)
+		pr_debug("%s: using request_firmware\n", __func__);
+	else
+		pr_debug("%s: using hwdep cal\n", __func__);
+	if (ret != 0 && !fw_data) {
 		pr_err("%s: Cannot load MBHC firmware use default cal\n",
-		       __func__);
-	} else if (wcd9xxx_mbhc_fw_validate(fw) == false) {
-		pr_err("%s: Invalid MBHC cal data size use default cal\n",
-		       __func__);
-		release_firmware(fw);
-	} else {
-		mbhc->mbhc_cfg->calibration = (void *)fw->data;
-		mbhc->mbhc_fw = fw;
+			__func__);
+		use_default_cal = true;
+	}
+	if (!use_default_cal) {
+		const void *data;
+		size_t size;
+
+		if (fw_data) {
+			data = fw_data->data;
+			size = fw_data->size;
+		} else {
+			data = fw->data;
+			size = fw->size;
+		}
+		if (wcd9xxx_mbhc_fw_validate(data, size) == false) {
+			pr_err("%s: Invalid MBHC cal data size use default cal\n",
+				__func__);
+			if (!fw_data)
+				release_firmware(fw);
+		} else {
+			if (fw_data) {
+				mbhc->mbhc_cfg->calibration =
+						(void *)fw_data->data;
+				mbhc->mbhc_cal = fw_data;
+			} else {
+				mbhc->mbhc_cfg->calibration =
+						(void *)fw->data;
+				mbhc->mbhc_fw = fw;
+			}
+		}
+
 	}
 
 	(void) wcd9xxx_init_and_calibrate(mbhc);
@@ -4099,15 +4168,16 @@ int wcd9xxx_mbhc_start(struct wcd9xxx_mbhc *mbhc,
 		mbhc->mbhc_cb->enable_clock_gate(mbhc->codec, true);
 
 	if (!mbhc->mbhc_cfg->read_fw_bin ||
-	    (mbhc->mbhc_cfg->read_fw_bin && mbhc->mbhc_fw)) {
+		(mbhc->mbhc_cfg->read_fw_bin && mbhc->mbhc_fw) ||
+		(mbhc->mbhc_cfg->read_fw_bin && mbhc->mbhc_cal)) {
 		rc = wcd9xxx_init_and_calibrate(mbhc);
 	} else {
-		if (!mbhc->mbhc_fw)
+		if (!mbhc->mbhc_fw || !mbhc->mbhc_cal)
 			schedule_delayed_work(&mbhc->mbhc_firmware_dwork,
 					     usecs_to_jiffies(FW_READ_TIMEOUT));
 		else
-			pr_debug("%s: Skipping to read mbhc fw, 0x%p\n",
-				 __func__, mbhc->mbhc_fw);
+			pr_debug("%s: Skipping to read mbhc fw, 0x%p 0x%p\n",
+				 __func__, mbhc->mbhc_fw, mbhc->mbhc_cal);
 	}
 
 	pr_debug("%s: leave %d\n", __func__, rc);
@@ -4117,10 +4187,12 @@ EXPORT_SYMBOL(wcd9xxx_mbhc_start);
 
 void wcd9xxx_mbhc_stop(struct wcd9xxx_mbhc *mbhc)
 {
-	if (mbhc->mbhc_fw) {
+	if (mbhc->mbhc_fw || mbhc->mbhc_cal) {
 		cancel_delayed_work_sync(&mbhc->mbhc_firmware_dwork);
-		release_firmware(mbhc->mbhc_fw);
+		if (!mbhc->mbhc_cal)
+			release_firmware(mbhc->mbhc_fw);
 		mbhc->mbhc_fw = NULL;
+		mbhc->mbhc_cal = NULL;
 	}
 }
 EXPORT_SYMBOL(wcd9xxx_mbhc_stop);
@@ -4236,6 +4308,7 @@ static int wcd9xxx_event_notify(struct notifier_block *self, unsigned long val,
 	pr_debug("%s: enter event %s(%d)\n", __func__,
 		 wcd9xxx_get_event_string(event), event);
 
+	mutex_lock(&mbhc->mbhc_lock);
 	switch (event) {
 	/* MICBIAS usage change */
 	case WCD9XXX_EVENT_PRE_MICBIAS_1_ON:
@@ -4283,7 +4356,7 @@ static int wcd9xxx_event_notify(struct notifier_block *self, unsigned long val,
 		}
 		if (mbhc->micbias_enable && mbhc->polling_active &&
 		    !(snd_soc_read(mbhc->codec, mbhc->mbhc_bias_regs.ctl_reg)
-	            & 0x80)) {
+		      & 0x80)) {
 			pr_debug("%s:Micbias turned off by recording, set up again",
 				 __func__);
 			snd_soc_update_bits(codec, mbhc->mbhc_bias_regs.ctl_reg,
@@ -4429,6 +4502,7 @@ static int wcd9xxx_event_notify(struct notifier_block *self, unsigned long val,
 		WARN(1, "Unknown event %d\n", event);
 		ret = -EINVAL;
 	}
+	mutex_unlock(&mbhc->mbhc_lock);
 
 	pr_debug("%s: leave\n", __func__);
 
@@ -4632,16 +4706,18 @@ int wcd9xxx_mbhc_init(struct wcd9xxx_mbhc *mbhc, struct wcd9xxx_resmgr *resmgr,
 				  wcd9xxx_mbhc_insert_work);
 	}
 
+	mutex_init(&mbhc->mbhc_lock);
+
 	/* Register event notifier */
 	mbhc->nblock.notifier_call = wcd9xxx_event_notify;
 	ret = wcd9xxx_resmgr_register_notifier(mbhc->resmgr, &mbhc->nblock);
 	if (ret) {
 		pr_err("%s: Failed to register notifier %d\n", __func__, ret);
+		mutex_destroy(&mbhc->mbhc_lock);
 		return ret;
 	}
 
 	wcd9xxx_init_debugfs(mbhc);
-
 
 	/* Disable Impedance detection by default for certain codec types */
 	if (mbhc->mbhc_cb &&
@@ -4727,6 +4803,8 @@ err_remove_irq:
 err_insert_irq:
 	wcd9xxx_resmgr_unregister_notifier(mbhc->resmgr, &mbhc->nblock);
 
+	mutex_destroy(&mbhc->mbhc_lock);
+
 	pr_debug("%s: leave ret %d\n", __func__, ret);
 	return ret;
 }
@@ -4748,6 +4826,7 @@ void wcd9xxx_mbhc_deinit(struct wcd9xxx_mbhc *mbhc)
 	wcd9xxx_free_irq(core_res, mbhc->intr_ids->hph_left_ocp, mbhc);
 	wcd9xxx_free_irq(core_res, mbhc->intr_ids->hph_right_ocp, mbhc);
 
+	mutex_destroy(&mbhc->mbhc_lock);
 	wcd9xxx_resmgr_unregister_notifier(mbhc->resmgr, &mbhc->nblock);
 	wcd9xxx_cleanup_debugfs(mbhc);
 }

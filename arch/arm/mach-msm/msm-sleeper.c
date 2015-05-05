@@ -35,7 +35,7 @@ static void msm_sleeper_suspend(void)
 
 	for_each_possible_cpu(cpu) {
 		msm_cpufreq_set_freq_limits(cpu, MSM_CPUFREQ_NO_LIMIT, maxscroff_freq);
-		//pr_info("Limit max frequency to: %d\n", maxscroff_freq);
+		pr_info("Limit max frequency to: %d\n", maxscroff_freq);
 	}
 	limit_set = 1;
 
@@ -48,7 +48,7 @@ static void msm_sleeper_resume(void)
 
 	for_each_possible_cpu(cpu) {
 		msm_cpufreq_set_freq_limits(cpu, MSM_CPUFREQ_NO_LIMIT, MSM_CPUFREQ_NO_LIMIT);
-		//pr_info("Restore max frequency to %d\n", MSM_CPUFREQ_NO_LIMIT);
+		pr_info("Restore max frequency to %d\n", MSM_CPUFREQ_NO_LIMIT);
 	}
 	limit_set = 0;
 

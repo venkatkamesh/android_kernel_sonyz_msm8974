@@ -120,7 +120,6 @@ static struct platform_device lastlogs_device = {
 #define RDTAGS_MEM_SIZE (256 * SZ_1K)
 #define RDTAGS_MEM_DESC_SIZE (256 * SZ_1K)
 #define LAST_LOGS_OFFSET (RDTAGS_MEM_SIZE + RDTAGS_MEM_DESC_SIZE)
-#define KEXEC_HB_OFFSET (RDTAGS_MEM_SIZE + RDTAGS_MEM_DESC_SIZE + LAST_LOGS_OFFSET)
 
 #ifdef CONFIG_CRASH_LAST_LOGS
 #define LAST_LOG_HEADER_SIZE 4096
@@ -210,11 +209,6 @@ static struct platform_device ram_console_device = {
 
 void __init msm_8974_reserve(void)
 {
-#ifdef CONFIG_KEXEC_HARDBOOT
-        int ret;
-        phys_addr_t start;
-	struct membank* bank;
-#endif
 #if defined(CONFIG_RAMDUMP_TAGS) || defined(CONFIG_CRASH_LAST_LOGS)
 	reserve_debug_memory();
 #endif
@@ -223,24 +217,6 @@ void __init msm_8974_reserve(void)
 #endif
 	reserve_info = &msm8974_reserve_info;
 	of_scan_flat_dt(dt_scan_for_memory_reserve, msm8974_reserve_table);
-#ifdef CONFIG_KEXEC_HARDBOOT
-        // Reserve space for hardboot page - just after ram_console,
-        // at the start of second memory bank
-
-        if (meminfo.nr_banks < 2) {
-                pr_err("%s: not enough membank\n", __func__);
-                return;
-        }
-
-	bank = &meminfo.bank[1];
-	start = bank->start + bank->size - SZ_1M + KEXEC_HB_OFFSET;
-	ret = memblock_remove(start, SZ_1M);
-        if(!ret)
-                pr_info("Hardboot page reserved at 0x%X\n", start);
-        else
-                pr_err("Failed to reserve space for hardboot page at 0x%X!\n", start);
-#endif
-
 	msm_reserve();
 }
 
@@ -332,8 +308,6 @@ static struct of_dev_auxdata msm8974_auxdata_lookup[] __initdata = {
 			"msm-tsens", NULL),
 	OF_DEV_AUXDATA("qcom,qcedev", 0xFD440000, \
 			"qcedev.0", NULL),
-	OF_DEV_AUXDATA("qcom,qcrypto", 0xFD440000, \
-			"qcrypto.0", NULL),
 	OF_DEV_AUXDATA("qcom,hsic-host", 0xF9A00000, \
 			"msm_hsic_host", NULL),
 	OF_DEV_AUXDATA("qcom,hsic-smsc-hub", 0, "msm_smsc_hub",

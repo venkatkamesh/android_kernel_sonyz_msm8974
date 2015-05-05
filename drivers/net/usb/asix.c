@@ -4,7 +4,7 @@
  * Copyright (C) 2005 Phil Chang <pchang23@sbcglobal.net>
  * Copyright (C) 2006 James Painter <jamie.painter@iname.com>
  * Copyright (c) 2002-2003 TiVo Inc.
- * Copyright (C) 2013 Sony Mobile Communications AB.
+ * Copyright (C) 2013 Sony Mobile Communications Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,7 +39,6 @@
 #include <linux/crc32.h>
 #include <linux/usb/usbnet.h>
 #include <linux/slab.h>
-#include <linux/if_vlan.h>
 
 #define DRIVER_VERSION "22-Dec-2011"
 #define DRIVER_NAME "asix"
@@ -326,7 +325,7 @@ static int asix_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 			return 0;
 		}
 
-		if ((size > dev->net->mtu + ETH_HLEN + VLAN_HLEN) ||
+		if ((size > dev->net->mtu + ETH_HLEN) ||
 		    (size + offset > skb->len)) {
 			netdev_err(dev->net, "asix_rx_fixup() Bad RX Length %d\n",
 				   size);
@@ -1111,7 +1110,7 @@ static int ax88772_bind(struct usbnet *dev, struct usb_interface *intf)
 	if (dev->driver_info->flags & FLAG_FRAMING_AX) {
 		/* hard_mtu  is still the default - the device does not support
 		   jumbo eth frames */
-		dev->rx_urb_size = 2048;
+		dev->rx_urb_size = 4096;
 	}
 
 	return 0;

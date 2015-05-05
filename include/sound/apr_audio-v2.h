@@ -1,4 +1,5 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+
+/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
 *  Copyright (C) 2013 Sony Mobile Communications AB.
 *
 * This program is free software; you can redistribute it and/or modify
@@ -578,6 +579,15 @@ struct adm_cmd_matrix_mute_v5 {
 
 	u16                 reserved_for_align;
 	/* Clients must set this field to zero.*/
+} __packed;
+
+#define ASM_PARAM_ID_AAC_STEREO_MIX_COEFF_SELECTION_FLAG_V2 (0x00010DD8)
+
+struct asm_aac_stereo_mix_coeff_selection_param_v2 {
+	struct apr_hdr          hdr;
+	u32                     param_id;
+	u32                     param_size;
+	u32                     aac_stereo_mix_coeff_flag;
 } __packed;
 
 /* Allows a client to connect the desired stream to
@@ -2256,6 +2266,7 @@ struct afe_port_cmdrsp_get_param_v2 {
 #define VPM_TX_SM_ECNS_COPP_TOPOLOGY			0x00010F71
 #define VPM_TX_DM_FLUENCE_COPP_TOPOLOGY			0x00010F72
 #define VPM_TX_QMIC_FLUENCE_COPP_TOPOLOGY		0x00010F75
+#define VPM_TX_DM_RFECNS_COPP_TOPOLOGY			0x00010F86
 
 /* Memory map regions command payload used by the
  * #ASM_CMD_SHARED_MEM_MAP_REGIONS ,#ADM_CMD_SHARED_MEM_MAP_REGIONS
@@ -6822,9 +6833,40 @@ struct sony_popp_effect_set_params_command {
 
 #define ASM_STREAM_POSTPROC_TOPO_ID_SONY	0x10002101
 
-struct xloud_params {
-	uint16_t	enable;
-	uint16_t	reserved;
+#define ASM_MODULE_ID_SONYBUNDLE                0x10002010
+
+#define PARAM_ID_SB_COMMON_USER_PARAM           0x10002011
+#define PARAM_ID_SB_DYNAMICNORMALIZER_USER_PARAM 0x10002012
+#define PARAM_ID_SB_SFORCE_USER_PARAM           0x10002013
+#define PARAM_ID_SB_VPT20_USER_PARAM            0x10002014
+#define PARAM_ID_SB_CLEARPHASE_HP_USER_PARAM    0x10002015
+#define PARAM_ID_SB_CLEARAUDIO_USER_PARAM       0x10002016
+#define PARAM_ID_SB_CLEARAUDIO_VOLUME_PARAM     0x10002017
+#define PARAM_ID_SB_CLEARPHASE_SP_USER_PARAM    0x10002018
+#define PARAM_ID_SB_XLOUD_USER_PARAM            0x10002019
+
+#define PARAM_ID_SB_CLEARPHASE_HP_TUNING        0x1000201A
+#define PARAM_ID_SB_SFORCE_TUNING               0x1000201B
+#define PARAM_ID_SB_CLEARPHASE_SP_TUNING        0x1000201C
+#define PARAM_ID_SB_XLOUD_TUNING                0x1000201D
+
+#define ASM_STREAM_POSTPROC_TOPO_ID_SONY       0x10002101
+
+struct clearphase_hp_tuning_params {
+	unsigned char coefs[2064];
+} __packed;
+
+struct s_force_tuning_params {
+	unsigned char coefs[1016];
+} __packed;
+
+struct clearphase_sp_tuning_params {
+	unsigned char coefs[2360];
+} __packed;
+
+struct xloud_tuning_params {
+	unsigned int level;
+	unsigned char coefs[512];
 } __packed;
 
 struct clearphase_params {
@@ -6935,6 +6977,7 @@ void sony_send_max_vol(void *client);
 #define Q6AFE_LPASS_IBIT_CLK_1_P024_MHZ		 0xFA000
 #define Q6AFE_LPASS_IBIT_CLK_768_KHZ		 0xBB800
 #define Q6AFE_LPASS_IBIT_CLK_512_KHZ		 0x7D000
+#define Q6AFE_LPASS_IBIT_CLK_256_KHZ		 0x3E800
 #define Q6AFE_LPASS_IBIT_CLK_DISABLE		     0x0
 
 /* Supported LPASS CLK sources */
@@ -7232,7 +7275,7 @@ struct afe_svc_cmd_set_clip_bank_selection {
 /* Ultrasound supported formats */
 #define US_POINT_EPOS_FORMAT_V2 0x0001272D
 #define US_RAW_FORMAT_V2        0x0001272C
-#define US_PROX_FORMAT_V2       0x0001272E
+#define US_PROX_FORMAT_V4       0x0001273B
 #define US_RAW_SYNC_FORMAT      0x0001272F
 #define US_GES_SYNC_FORMAT      0x00012730
 
