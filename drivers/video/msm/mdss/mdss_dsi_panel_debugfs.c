@@ -1,6 +1,6 @@
 /* drivers/video/msm/mdss_dsi_panel_debugfs.c
  *
- * Copyright (C) 2012-2013 Sony Mobile Communications AB.
+ * Copyright (c) 2012 Sony Mobile Communications Inc.
  *
  * Sony Mobile DSI display driver debug fs
  *
@@ -200,6 +200,7 @@ static int prepare_for_reg_access(struct msm_fb_data_type *mfd)
 	struct mdss_panel_data *pdata;
 	int ret = 0;
 	struct mdss_mdp_ctl *ctl;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 
 	ctl = mfd_to_ctl(mfd);
 	if (!ctl)
@@ -211,12 +212,13 @@ static int prepare_for_reg_access(struct msm_fb_data_type *mfd)
 		return -ENODEV;
 	}
 
-	if (pdata->panel_info.type == MIPI_CMD_PANEL) {
-		if (ctl->display_fnc)
-			ret = ctl->display_fnc(ctl, NULL);
-		if (ret)
-			pr_warn("error displaying frame\n");
-	}
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
+	mdss_dsi_cmd_mdp_busy(ctrl_pdata);
+	mdss_bus_bandwidth_ctrl(1);
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
 
 	mdss_dsi_op_mode_config(DSI_CMD_MODE, pdata);
 
@@ -227,6 +229,7 @@ static int post_reg_access(struct msm_fb_data_type *mfd)
 {
 	struct mdss_panel_data *pdata;
 	int ret = 0;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 
 	pdata = dev_get_platdata(&mfd->pdev->dev);
 	if (!pdata) {
@@ -234,7 +237,13 @@ static int post_reg_access(struct msm_fb_data_type *mfd)
 		return -ENODEV;
 	}
 
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+				panel_data);
+
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
+	mdss_bus_bandwidth_ctrl(0);
 	mdss_dsi_op_mode_config(pdata->panel_info.mipi.mode, pdata);
+	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
 
 	return ret;
 }

@@ -462,8 +462,8 @@ static void get_krait_bin_format_b(struct platform_device *pdev,
 	if (pte_efuse & BIT(3)) {
 		dev_info(&pdev->dev, "Speed bin: %d\n", *speed);
 	} else {
-		dev_warn(&pdev->dev, "PVS Bin is not Found or Founds. Setting to Developer Preference\n");
-		*speed = 1;
+		dev_warn(&pdev->dev, "Speed bin not set. Defaulting to 0!\n");
+		*speed = 0;
 	}
 
 	/* Check PVS_BLOW_STATUS */
@@ -471,8 +471,8 @@ static void get_krait_bin_format_b(struct platform_device *pdev,
 	if (pte_efuse) {
 		dev_info(&pdev->dev, "PVS bin: %d\n", *pvs);
 	} else {
-		dev_warn(&pdev->dev, "PVS Bin is not Found or Founds. Setting to Developer Preference\n");
-		*pvs = 1;
+		dev_warn(&pdev->dev, "PVS bin not set. Defaulting to 0!\n");
+		*pvs = 0;
 	}
 
 	dev_info(&pdev->dev, "PVS version: %d\n", *pvs_ver);
@@ -480,7 +480,7 @@ static void get_krait_bin_format_b(struct platform_device *pdev,
 #ifdef CONFIG_CPU_OC
 #ifdef CONFIG_OC_ULTIMATE
 	dev_info(&pdev->dev, "DooMLoRD: Forcing CPU OC Ultimate!\n");
-	*speed = 1;
+	*speed = 3;
 #else
 	dev_info(&pdev->dev, "DooMLoRD: Forcing CPU OC!\n");
 	*speed = 1;
@@ -673,7 +673,7 @@ ssize_t store_UV_mV_table(struct cpufreq_policy *policy, char *buf,
 	}
 	pr_warn("faux123: user voltage table modified!\n");
 
-	return ret;
+	return count;
 }
 #endif
 

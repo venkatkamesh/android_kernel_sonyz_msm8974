@@ -155,8 +155,6 @@ static int __init ram_console_late_init(void)
 	struct proc_dir_entry *entry;
 	struct persistent_ram_zone *prz = ram_console_zone;
 
-	persistent_ram_ext_oldbuf_merge(prz);
-
 	if (!prz)
 		return 0;
 

@@ -1355,8 +1355,8 @@ static int netlink_sendmsg(struct kiocb *kiocb, struct socket *sock,
 		dst_group = ffs(addr->nl_groups);
 		err =  -EPERM;
 		if ((dst_group || dst_pid) &&
-			!netlink_capable(sock, NL_NONROOT_SEND))
-				goto out;
+		    !netlink_capable(sock, NL_NONROOT_SEND))
+			goto out;
 	} else {
 		dst_pid = nlk->dst_pid;
 		dst_group = nlk->dst_group;
@@ -1543,11 +1543,11 @@ netlink_kernel_create(struct net *net, int unit, unsigned int groups,
 	if (input)
 		nlk_sk(sk)->netlink_rcv = input;
 
-	if (netlink_insert(sk, net, 0))
-		goto out_sock_release;
-
 	nlk = nlk_sk(sk);
 	nlk->flags |= NETLINK_KERNEL_SOCKET;
+
+	if (netlink_insert(sk, net, 0))
+		goto out_sock_release;
 
 	netlink_table_grab();
 	if (!nl_table[unit].registered) {

@@ -154,6 +154,7 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(input_current_max),
 	POWER_SUPPLY_ATTR(input_current_trim),
 	POWER_SUPPLY_ATTR(input_current_settled),
+	POWER_SUPPLY_ATTR(bypass_vchg_loop_debouncer),
 	POWER_SUPPLY_ATTR(current_now),
 	POWER_SUPPLY_ATTR(current_avg),
 	POWER_SUPPLY_ATTR(current_system_max),
@@ -187,7 +188,9 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(scope),
 	POWER_SUPPLY_ATTR(system_temp_level),
 	POWER_SUPPLY_ATTR(resistance),
-	POWER_SUPPLY_ATTR(enable_stop_charging_at_low_battery),
+	POWER_SUPPLY_ATTR(enable_shutdown_at_low_battery),
+	POWER_SUPPLY_ATTR(batt_aging),
+	POWER_SUPPLY_ATTR(enable_llk),
 	POWER_SUPPLY_ATTR(soc_update_request),
 	/* Properties of type `const char *' */
 	POWER_SUPPLY_ATTR(model_name),

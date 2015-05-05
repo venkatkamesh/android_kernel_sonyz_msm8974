@@ -1,5 +1,5 @@
 /* Copyright (c) 2013, The Linux Foundation. All rights reserved.
- * Copyright (C) 2013 Sony Mobile Communications AB.
+ * Copyright (C) 2013 Sony Mobile Communications Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,8 +20,6 @@
 #include <linux/input.h>
 #include "mhl_msc.h"
 #include "mdss_hdmi_mhl.h"
-
-#define PRINT_DEVCAP
 
 #define MHL_TX_EVENT_DSCR_CHG	1
 #define MHL_ADOPTER_ID_SOMC		0x03A7
@@ -44,28 +42,12 @@ struct workqueue_struct *screen_ctrl_workqueue;
 
 static void mhl_notify_event(struct mhl_tx_ctrl *mhl_ctrl, int event);
 
-/*
- * Android defines [DEFAULT_LONG_PRESS_TIMEOUT = 500].
- * 450ms is enought not to let system detect LongPress.
- */
-#define RCP_KEY_RELEASE_TIME1	450
-
-/*
- * In samsung dongle case, cursor moves a lot than normal situation with
- * pressing direction key twice in a short time.
- * Please add following explanation after "twice" .
- * Android defines [DEFAULT_LONG_PRESS_TIMEOUT = 500], so if release event is
- * not injected within 500ms, then the time out occurs and system become to
- * detect the event as LongPress. For that reason, we set the release timer as
- * 200ms not to let system judge it is LongPress.
- */
-#define RCP_KEY_RELEASE_TIME2	200
+#define RCP_KEY_RELEASE_TIME	450
 #define RCP_KEY_INVALID			-1
 
 static DEFINE_MUTEX(rcp_key_release_mutex);
 struct workqueue_struct *rcp_key_release_workqueue;
 
-#ifdef PRINT_DEVCAP
 const char *devcap_reg_name[] = {
 	"DEV_STATE       ",
 	"MHL_VERSION     ",
@@ -89,26 +71,23 @@ static void mhl_print_devcap(u8 offset, u8 devcap)
 {
 	switch (offset) {
 	case DEVCAP_OFFSET_DEV_CAT:
-		pr_info("DCAP: %02X %s: %02X DEV_TYPE=%X POW=%s\n",
+		pr_debug("DCAP: %02X %s: %02X DEV_TYPE=%X POW=%s\n",
 			offset, devcap_reg_name[offset], devcap,
 			devcap & 0x0F, (devcap & 0x10) ? "y" : "n");
 		break;
 	case DEVCAP_OFFSET_FEATURE_FLAG:
-		pr_info("DCAP: %02X %s: %02X RCP=%s RAP=%s SP=%s\n",
+		pr_debug("DCAP: %02X %s: %02X RCP=%s RAP=%s SP=%s\n",
 			offset, devcap_reg_name[offset], devcap,
 			(devcap & 0x01) ? "y" : "n",
 			(devcap & 0x02) ? "y" : "n",
 			(devcap & 0x04) ? "y" : "n");
 		break;
 	default:
-		pr_info("DCAP: %02X %s: %02X\n",
+		pr_debug("DCAP: %02X %s: %02X\n",
 			offset, devcap_reg_name[offset], devcap);
 		break;
 	}
 }
-#else
-static inline void mhl_print_devcap(u8 offset, u8 devcap) {}
-#endif
 
 static bool mhl_qualify_path_enable(struct mhl_tx_ctrl *mhl_ctrl)
 {
@@ -252,9 +231,7 @@ static int mhl_update_devcap(struct mhl_tx_ctrl *mhl_ctrl,
 	if (offset < 0 || offset > 15)
 		return -EFAULT;
 	mhl_ctrl->devcap[offset] = devcap;
-#ifdef PRINT_DEVCAP
 	mhl_print_devcap(offset, mhl_ctrl->devcap[offset]);
-#endif
 
 	return 0;
 }
@@ -594,22 +571,8 @@ static void mhl_handle_input(struct mhl_tx_ctrl *mhl_ctrl,
 		mhl_ctrl->rcp_pre_input_key = input_key_code;
 		mutex_unlock(&rcp_key_release_mutex);
 		/* rcp key release timer start */
-		switch (input_key_code) {
-		case KEY_UP:
-		case KEY_DOWN:
-		case KEY_LEFT:
-		case KEY_RIGHT:
-		case BTN_LEFT:
-			mod_timer(&mhl_ctrl->rcp_key_release_timer,
-				jiffies +
-				msecs_to_jiffies(RCP_KEY_RELEASE_TIME2));
-			break;
-		default:
-			mod_timer(&mhl_ctrl->rcp_key_release_timer,
-				jiffies +
-				msecs_to_jiffies(RCP_KEY_RELEASE_TIME1));
-			break;
-		}
+		mod_timer(&mhl_ctrl->rcp_key_release_timer,
+			jiffies + msecs_to_jiffies(RCP_KEY_RELEASE_TIME));
 	} else {
 		mutex_lock(&rcp_key_release_mutex);
 		mhl_ctrl->rcp_key_release = false;
