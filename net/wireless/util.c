@@ -10,6 +10,8 @@
 #include <net/cfg80211.h>
 #include <net/ip.h>
 #include <net/dsfield.h>
+#include <net/ndisc.h>
+#include <linux/if_arp.h>
 #include "core.h"
 
 struct ieee80211_rate *
@@ -641,7 +643,8 @@ void ieee80211_amsdu_to_8023s(struct sk_buff *skb, struct sk_buff_head *list,
 EXPORT_SYMBOL(ieee80211_amsdu_to_8023s);
 
 /* Given a data frame determine the 802.1p/1d tag to use. */
-unsigned int cfg80211_classify8021d(struct sk_buff *skb)
+unsigned int cfg80211_classify8021d(struct sk_buff *skb,
+				    struct cfg80211_qos_map *qos_map)
 {
 	unsigned int dscp;
 
@@ -662,6 +665,21 @@ unsigned int cfg80211_classify8021d(struct sk_buff *skb)
 		break;
 	default:
 		return 0;
+	}
+
+	if (qos_map) {
+		unsigned int i, tmp_dscp = dscp >> 2;
+
+		for (i = 0; i < qos_map->num_des; i++) {
+			if (tmp_dscp == qos_map->dscp_exception[i].dscp)
+				return qos_map->dscp_exception[i].up;
+		}
+
+		for (i = 0; i < 8; i++) {
+			if (tmp_dscp >= qos_map->up[i].low &&
+			    tmp_dscp <= qos_map->up[i].high)
+				return i;
+		}
 	}
 
 	return dscp >> 5;
@@ -721,7 +739,7 @@ void cfg80211_upload_connect_keys(struct wireless_dev *wdev)
 	wdev->connect_keys = NULL;
 }
 
-void cfg80211_process_wdev_events(struct wireless_dev *wdev)
+static void cfg80211_process_wdev_events(struct wireless_dev *wdev)
 {
 	struct cfg80211_event *ev;
 	unsigned long flags;
@@ -817,6 +835,9 @@ int cfg80211_change_iface(struct cfg80211_registered_device *rdev,
 
 		dev->ieee80211_ptr->use_4addr = false;
 		dev->ieee80211_ptr->mesh_id_up_len = 0;
+		if (rdev->ops->set_qos_map) {
+			rdev->ops->set_qos_map(&rdev->wiphy, dev, NULL);
+		}
 
 		switch (otype) {
 		case NL80211_IFTYPE_ADHOC:
@@ -1013,7 +1034,6 @@ int cfg80211_can_change_interface(struct cfg80211_registered_device *rdev,
 				  enum nl80211_iftype iftype)
 {
 	struct wireless_dev *wdev_iter;
-	u32 used_iftypes = BIT(iftype);
 	int num[NUM_NL80211_IFTYPES];
 	int total = 1;
 	int i, j;
@@ -1047,17 +1067,12 @@ int cfg80211_can_change_interface(struct cfg80211_registered_device *rdev,
 
 		num[wdev_iter->iftype]++;
 		total++;
-		used_iftypes |= BIT(wdev_iter->iftype);
 	}
 	mutex_unlock(&rdev->devlist_mtx);
-
-	if (total == 1)
-		return 0;
 
 	for (i = 0; i < rdev->wiphy.n_iface_combinations; i++) {
 		const struct ieee80211_iface_combination *c;
 		struct ieee80211_iface_limit *limits;
-		u32 all_iftypes = 0;
 
 		c = &rdev->wiphy.iface_combinations[i];
 
@@ -1072,7 +1087,6 @@ int cfg80211_can_change_interface(struct cfg80211_registered_device *rdev,
 			if (rdev->wiphy.software_iftypes & BIT(iftype))
 				continue;
 			for (j = 0; j < c->n_limits; j++) {
-				all_iftypes |= limits[j].types;
 				if (!(limits[j].types & BIT(iftype)))
 					continue;
 				if (limits[j].max < num[iftype])
@@ -1080,20 +1094,7 @@ int cfg80211_can_change_interface(struct cfg80211_registered_device *rdev,
 				limits[j].max -= num[iftype];
 			}
 		}
-
-		/*
-		 * Finally check that all iftypes that we're currently
-		 * using are actually part of this combination. If they
-		 * aren't then we can't use this combination and have
-		 * to continue to the next.
-		 */
-		if ((all_iftypes & used_iftypes) != used_iftypes)
-			goto cont;
-
-		/*
-		 * This combination covered all interface types and
-		 * supported the requested numbers, so we're good.
-		 */
+		/* yay, it fits */
 		kfree(limits);
 		return 0;
  cont:
@@ -1151,3 +1152,54 @@ EXPORT_SYMBOL(rfc1042_header);
 const unsigned char bridge_tunnel_header[] __aligned(2) =
 	{ 0xaa, 0xaa, 0x03, 0x00, 0x00, 0xf8 };
 EXPORT_SYMBOL(bridge_tunnel_header);
+
+bool cfg80211_is_gratuitous_arp_unsolicited_na(struct sk_buff *skb)
+{
+	const struct ethhdr *eth = (void *)skb->data;
+	const struct {
+		struct arphdr hdr;
+		u8 ar_sha[ETH_ALEN];
+		u8 ar_sip[4];
+		u8 ar_tha[ETH_ALEN];
+		u8 ar_tip[4];
+	} __packed *arp;
+	const struct ipv6hdr *ipv6;
+	const struct icmp6hdr *icmpv6;
+
+	switch (eth->h_proto) {
+	case cpu_to_be16(ETH_P_ARP):
+		/* can't say - but will probably be dropped later anyway */
+		if (!pskb_may_pull(skb, sizeof(*eth) + sizeof(*arp)))
+			return false;
+
+		arp = (void *)(eth + 1);
+
+		if ((arp->hdr.ar_op == cpu_to_be16(ARPOP_REPLY) ||
+		     arp->hdr.ar_op == cpu_to_be16(ARPOP_REQUEST)) &&
+		    !memcmp(arp->ar_sip, arp->ar_tip, sizeof(arp->ar_sip)))
+			return true;
+		break;
+	case cpu_to_be16(ETH_P_IPV6):
+		/* can't say - but will probably be dropped later anyway */
+		if (!pskb_may_pull(skb, sizeof(*eth) + sizeof(*ipv6) +
+					sizeof(*icmpv6)))
+			return false;
+
+		ipv6 = (void *)(eth + 1);
+		icmpv6 = (void *)(ipv6 + 1);
+
+		if (icmpv6->icmp6_type == NDISC_NEIGHBOUR_ADVERTISEMENT &&
+		    !memcmp(&ipv6->saddr, &ipv6->daddr, sizeof(ipv6->saddr)))
+			return true;
+		break;
+	default:
+		/*
+		 * no need to support other protocols, proxy service isn't
+		 * specified for any others
+		 */
+		break;
+	}
+
+	return false;
+}
+EXPORT_SYMBOL(cfg80211_is_gratuitous_arp_unsolicited_na);

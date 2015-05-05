@@ -1,5 +1,5 @@
 /* Copyright (c) 2013, The Linux Foundation. All rights reserved.
- * Copyright (C) 2013 Sony Mobile Communications AB.
+ * Copyright (C) 2014 Sony Mobile Communications Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -373,7 +373,7 @@ static int msm_isp_stats_wait_for_cfg_done(struct vfe_device *vfe_dev)
 		&vfe_dev->stats_config_complete,
 		msecs_to_jiffies(vfe_dev->timeout));
 #else
-	rc = wait_for_completion_interruptible_timeout(
+	rc = wait_for_completion_timeout(
 		&vfe_dev->stats_config_complete,
 		msecs_to_jiffies(VFE_MAX_CFG_TIMEOUT));
 #endif
@@ -500,6 +500,9 @@ int msm_isp_cfg_stats_stream(struct vfe_device *vfe_dev, void *arg)
 {
 	int rc = 0;
 	struct msm_vfe_stats_stream_cfg_cmd *stream_cfg_cmd = arg;
+	struct msm_vfe_stats_shared_data *stats_data = &vfe_dev->stats_data;
+	stats_data->stats_burst_len =  stream_cfg_cmd->stats_burst_len;
+
 	if (vfe_dev->stats_data.num_active_stream == 0)
 		vfe_dev->hw_info->vfe_ops.stats_ops.cfg_ub(vfe_dev);
 

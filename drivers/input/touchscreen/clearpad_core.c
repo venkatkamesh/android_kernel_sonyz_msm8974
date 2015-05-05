@@ -4535,4 +4535,3 @@ module_exit(clearpad_exit);
 
 MODULE_DESCRIPTION(CLEARPAD_NAME "ClearPad Driver");
 MODULE_LICENSE("GPL v2");
-

@@ -1,5 +1,6 @@
 /* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Sony Mobile Communications AB.
+ * Copyright (c) 2015 Sony Mobile Communications Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -215,6 +216,7 @@
 	sound {
 		qcom,model = "msm8974-taiko-mtp-snd-card";
 		qcom,cdc-micbias2-headset-only;
+		qcom,mbhc-audio-jack-type = "6-pole-jack";
 	};
 };
 
@@ -383,6 +385,7 @@
 	qcom,min-fcc-learning-samples = <5>;
 	qcom,fcc-resolution = <10>;
 	status = "ok";
+    qcom,clamp-soc-max-count = <2>;
 };
 
 &pm8941_chg {
@@ -697,6 +700,7 @@
 	taiko_codec {
 		qcom,cdc-micbias1-ext-cap;
 		qcom,cdc-micbias2-ext-cap;
+		qcom,cdc-micbias3-ext-cap;
 		qcom,cdc-micbias4-ext-cap;
 	};
 };

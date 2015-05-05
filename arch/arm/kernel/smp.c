@@ -222,11 +222,8 @@ int __cpu_disable(void)
 	/*
 	 * Flush user cache and TLB mappings, and then remove this CPU
 	 * from the vm mask set of all processes.
-	 *
-	 * Caches are flushed to the Level of Unification Inner Shareable
-	 * to write-back dirty lines to unified caches shared by all CPUs.
 	 */
-	flush_cache_louis();
+	flush_cache_all();
 	local_flush_tlb_all();
 
 	read_lock(&tasklist_lock);
@@ -716,6 +713,7 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 
 void smp_send_reschedule(int cpu)
 {
+	BUG_ON(cpu_is_offline(cpu));
 	smp_cross_call(cpumask_of(cpu), IPI_RESCHEDULE);
 }
 

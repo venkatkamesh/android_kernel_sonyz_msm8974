@@ -432,11 +432,6 @@ config PGTABLE_MAPPING
 	  architecture (ex, ARM) performs VM mapping faster than copying,
 	  then you should select this. This causes zsmalloc to use page table
 	  mapping rather than copying for object mapping.
+
 	  You can check speed with zsmalloc benchmark[1].
 	  [1] https://github.com/spartacus06/zsmalloc
-
-config FRONTSWAP
-	bool "Enable cleancache driver to cache clean pages if tmem is present"
-	default y
-
-

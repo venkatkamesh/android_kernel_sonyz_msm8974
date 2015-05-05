@@ -18,6 +18,7 @@
 #include <linux/kernel.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/input/evgen_helper.h>
 
 #define CLEARPAD_NAME "clearpad"
 #define CLEARPADI2C_NAME "clearpad-i2c"
@@ -65,7 +66,7 @@ struct synaptics_button_data {
 struct synaptics_easy_wakeup_config {
 	bool gesture_enable;
 	bool large_panel;
-	u32 timeout_delay;
+	unsigned long timeout_delay;
 };
 
 struct clearpad_platform_data {

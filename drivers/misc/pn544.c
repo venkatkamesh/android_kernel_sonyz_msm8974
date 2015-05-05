@@ -1,6 +1,6 @@
 /* drivers/misc/pn544.c
  *
- * Copyright (C) 2012-2013 Sony Mobile Communications AB.
+ * Copyright (C) 2012 Sony Mobile Communications Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2, as
@@ -516,12 +516,12 @@ static long pn544_dev_ioctl(struct file *file,
 	int ret = 0;
 	int state = 0;
 
+	disable_irq(d->i2c_client->irq);
 	mutex_lock(&d->lock);
 	dev_dbg(d->dev, "%s: cmd=%d val=%lu\n", __func__, cmd, val);
 	if (atomic_read(&d->res_ready))
 		dev_dbg(d->dev, "%s: interruption is ignored\n", __func__);
 
-	disable_irq(d->i2c_client->irq);
 	switch (cmd) {
 	case PN544_SET_PWR:
 		switch (val) {
@@ -565,8 +565,8 @@ static long pn544_dev_ioctl(struct file *file,
 		break;
 	}
 exit:
-	enable_irq(d->i2c_client->irq);
 	mutex_unlock(&d->lock);
+	enable_irq(d->i2c_client->irq);
 	return ret;
 }
 
