@@ -59,6 +59,7 @@
 #endif
 #include "board-8974-console.h"
 
+
 static struct memtype_reserve msm8974_reserve_table[] __initdata = {
 	[MEMTYPE_SMI] = {
 	},
@@ -265,6 +266,7 @@ void __init msm8974_add_drivers(void)
 #else
 	msm_thermal_device_init();
 #endif
+
 }
 
 static struct of_dev_auxdata msm_hsic_host_adata[] = {
