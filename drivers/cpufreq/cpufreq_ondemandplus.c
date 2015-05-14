@@ -75,6 +75,40 @@ struct cpufreq_ondemandplus_cpuinfo {
         int governor_enabled;
 };
 
+static inline u64 get_cpu_idle_time_jiffy(unsigned int cpu, u64 *wall)
+{
+	u64 idle_time;
+	u64 cur_wall_time;
+	u64 busy_time;
+
+	cur_wall_time = jiffies64_to_cputime64(get_jiffies_64());
+
+	busy_time = kcpustat_cpu(cpu).cpustat[CPUTIME_USER];
+	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_SYSTEM];
+	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_IRQ];
+	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_SOFTIRQ];
+	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_STEAL];
+	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_NICE];
+
+	idle_time = cur_wall_time - busy_time;
+	if (wall)
+		*wall = cputime_to_usecs(cur_wall_time);
+
+	return cputime_to_usecs(idle_time);
+}
+
+static u64 get_cpu_idle_time(unsigned int cpu, u64 *wall, int io_busy)
+{
+	u64 idle_time = get_cpu_idle_time_us(cpu, io_busy ? wall : NULL);
+
+	if (idle_time == -1ULL)
+		return get_cpu_idle_time_jiffy(cpu, wall);
+	else if (!io_busy)
+		idle_time += get_cpu_iowait_time_us(cpu, wall);
+
+	return idle_time;
+}
+
 static DEFINE_PER_CPU(struct cpufreq_ondemandplus_cpuinfo, cpuinfo);
 
 /* realtime thread handles frequency scaling */
@@ -98,10 +132,10 @@ static unsigned long down_differential;
 #define DEFAULT_MIN_FREQ 300000
 static u64 allowed_min;
 
-#define DEFAULT_MAX_FREQ 2265600
+#define DEFAULT_MAX_FREQ 2803200
 static u64 allowed_max;
 
-#define DEFAULT_INTER_HIFREQ 1728000
+#define DEFAULT_INTER_HIFREQ 2265600
 static u64 inter_hifreq;
 
 #define DEFAULT_INTER_LOFREQ 300000
@@ -113,11 +147,11 @@ static u64 suspend_frequency;
 #define DEFAULT_INTER_STAYCYCLES 2
 static unsigned long inter_staycycles;
 
-#define DEFAULT_STAYCYCLES_RESETFREQ 652800
+#define DEFAULT_STAYCYCLES_RESETFREQ 960000
 static u64 staycycles_resetfreq;
 
 #define DEFAULT_IO_IS_BUSY 0
-static unsigned int io_is_busy;
+unsigned int io_is_busy;
 
 /*
  * Tunables end
@@ -135,44 +169,6 @@ struct cpufreq_governor cpufreq_gov_ondemandplus = {
         .max_transition_latency = 10000000,
         .owner = THIS_MODULE,
 };
-
-static inline cputime64_t get_cpu_idle_time_jiffy(unsigned int cpu,
-                                                  cputime64_t *wall)
-{
-        u64 idle_time;
-        u64 cur_wall_time;
-        u64 busy_time;
-
-        cur_wall_time = jiffies64_to_cputime64(get_jiffies_64());
-
-        busy_time  = kcpustat_cpu(cpu).cpustat[CPUTIME_USER];
-        busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_SYSTEM];
-        busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_IRQ];
-        busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_SOFTIRQ];
-        busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_STEAL];
-        busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_NICE];
-
-        idle_time = cur_wall_time - busy_time;
-        if (wall)
-                *wall = jiffies_to_usecs(cur_wall_time);
-
-        return jiffies_to_usecs(idle_time);
-}
-
-static inline cputime64_t get_cpu_idle_time(unsigned int cpu,
-                                            cputime64_t *wall)
-{
-        u64 idle_time = get_cpu_idle_time_us(cpu, wall);
-
-        if (idle_time == -1ULL)
-                idle_time = get_cpu_idle_time_jiffy(cpu, wall);        
-        else if (io_is_busy == 2)
-                idle_time += (get_cpu_iowait_time_us(cpu, wall) / 2);
-        else if (!io_is_busy)
-                idle_time += get_cpu_iowait_time_us(cpu, wall);
-
-        return idle_time;
-}
 
 static void cpufreq_ondemandplus_timer(unsigned long data)
 {
@@ -208,7 +204,7 @@ static void cpufreq_ondemandplus_timer(unsigned long data)
 
         time_in_idle = pcpu->time_in_idle;
         idle_exit_time = pcpu->idle_exit_time;
-        now_idle = get_cpu_idle_time(data, &pcpu->timer_run_time);
+        now_idle = get_cpu_idle_time(data, &pcpu->timer_run_time, 0);
         smp_wmb();
 
         /* If we raced with cancelling a timer, skip. */
@@ -416,7 +412,7 @@ rearm:
                 }
 
                 pcpu->time_in_idle = get_cpu_idle_time(
-                        data, &pcpu->idle_exit_time);
+                        data, &pcpu->idle_exit_time, 0);
                 mod_timer(&pcpu->cpu_timer,
                         jiffies + usecs_to_jiffies(timer_rate));
         }
@@ -450,7 +446,7 @@ static void cpufreq_ondemandplus_idle_start(void)
                  */
                 if (!pending) {
                         pcpu->time_in_idle = get_cpu_idle_time(
-                                smp_processor_id(), &pcpu->idle_exit_time);
+                                smp_processor_id(), &pcpu->idle_exit_time, 0);
                         pcpu->timer_idlecancel = 0;
                         mod_timer(&pcpu->cpu_timer,
                                   jiffies + usecs_to_jiffies(timer_rate));
@@ -501,7 +497,7 @@ static void cpufreq_ondemandplus_idle_end(void)
             pcpu->governor_enabled) {
                 pcpu->time_in_idle =
                         get_cpu_idle_time(smp_processor_id(),
-                                             &pcpu->idle_exit_time);
+                                             &pcpu->idle_exit_time, 0);
                 pcpu->timer_idlecancel = 0;
                 mod_timer(&pcpu->cpu_timer,
                           jiffies + usecs_to_jiffies(timer_rate));
@@ -861,7 +857,7 @@ static int cpufreq_governor_ondemandplus(struct cpufreq_policy *policy,
                         pcpu->freq_table = freq_table;
                         pcpu->target_set_time_in_idle =
                                 get_cpu_idle_time(j,
-                                             &pcpu->target_set_time);
+                                             &pcpu->target_set_time, 0);
                         pcpu->governor_enabled = 1;
                         smp_wmb();
                 }
@@ -982,4 +978,3 @@ MODULE_AUTHOR("Mike Chan <mike@android.com>");
 MODULE_DESCRIPTION("'cpufreq_ondemandplus' - A cpufreq governor for "
         "semi-aggressive scaling");
 MODULE_LICENSE("GPL");
-
