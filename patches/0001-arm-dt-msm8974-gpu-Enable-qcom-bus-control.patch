@@ -1,0 +1,25 @@
+From f10ed7ea122c015d3e88499c77499310a3af0d11 Mon Sep 17 00:00:00 2001
+Message-Id: <f10ed7ea122c015d3e88499c77499310a3af0d11.1431767339.git.venkat.kamesh90@gmail.com>
+From: Venkat kamesh <venkat.kamesh09@gmail.com>
+Date: Fri, 15 May 2015 23:08:17 +0530
+Subject: [PATCH] arm/dt: msm8974-gpu: Enable qcom bus-control
+
+---
+ arch/arm/boot/dts/msm8974-gpu.dtsi | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/arm/boot/dts/msm8974-gpu.dtsi b/arch/arm/boot/dts/msm8974-gpu.dtsi
+index 20dec9a..d93265e 100644
+--- a/arch/arm/boot/dts/msm8974-gpu.dtsi
++++ b/arch/arm/boot/dts/msm8974-gpu.dtsi
+@@ -24,6 +24,7 @@
+ 
+ 		qcom,initial-pwrlevel = <1>;
+ 
++		qcom,bus-control;
+ 		qcom,idle-timeout = <8>; //<HZ/12>
+ 		qcom,strtstp-sleepwake;
+ 		qcom,clk-map = <0x0000006>; //KGSL_CLK_CORE | KGSL_CLK_IFACE
+-- 
+1.9.1
+
