@@ -114,7 +114,6 @@ static void doubletap2wake_reset(void) {
 	tap_time_pre = 0;
 	x_pre = 0;
 	y_pre = 0;
-	touch_cnt = false;
 }
 
 /* PowerKey work func */
@@ -170,30 +169,28 @@ static void detect_doubletap2wake(int x, int y, bool st)
 	else
 		dt2w_feather = 200;
 	if ((single_touch) && (dt2w_switch > 0) && (exec_count) && (touch_cnt)) {
-		
-		if ((ktime_to_ms(ktime_get())-tap_time_pre) >= DT2W_TIME)
-			doubletap2wake_reset();
-		
+		touch_cnt = false;
 		if (touch_nr == 0) {
 			new_touch(x, y);
 		} else if (touch_nr == 1) {
 			if ((calc_feather(x, x_pre) < dt2w_feather) &&
-			    (calc_feather(y, y_pre) < dt2w_feather)) {
-				pr_info(LOGTAG"ON\n");
-				exec_count = false;
-				doubletap2wake_pwrtrigger();
-				doubletap2wake_reset();
-			} else {
+			    (calc_feather(y, y_pre) < dt2w_feather) &&
+			    ((ktime_to_ms(ktime_get())-tap_time_pre) < DT2W_TIME))
+				touch_nr++;
+			else {
 				doubletap2wake_reset();
 				new_touch(x, y);
 			}
+		} else {
+			doubletap2wake_reset();
+			new_touch(x, y);
 		}
-		/*if ((touch_nr > 1)) {
+		if ((touch_nr > 1)) {
 			pr_info(LOGTAG"ON\n");
 			exec_count = false;
 			doubletap2wake_pwrtrigger();
 			doubletap2wake_reset();
-		}*/
+		}
 	}
 }
 
@@ -236,7 +233,7 @@ static void dt2w_input_event(struct input_handle *handle, unsigned int type,
 		touch_y_called = true;
 	}
 
-	if ((touch_x_called || touch_y_called) && touch_cnt)  {
+	if (touch_x_called || touch_y_called) {
 		touch_x_called = false;
 		touch_y_called = false;
 		queue_work_on(0, dt2w_input_wq, &dt2w_input_work);
