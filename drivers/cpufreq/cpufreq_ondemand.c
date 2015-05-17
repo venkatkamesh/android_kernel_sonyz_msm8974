@@ -1001,9 +1001,10 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		}
 	}
 
-	load_at_max_freq = (cur_load * policy->cur) / policy->max;
-	cpufreq_notify_utilization(policy, load_at_max_freq);
+	/* calculate the scaled load across CPU */
+	load_at_max_freq = (cur_load * policy->cur)/policy->cpuinfo.max_freq;
 
+	cpufreq_notify_utilization(policy, load_at_max_freq);
 	/* Check for frequency increase */
 	if (max_load_freq > dbs_tuners_ins.up_threshold * policy->cur) {
 		unsigned int freq_target;
