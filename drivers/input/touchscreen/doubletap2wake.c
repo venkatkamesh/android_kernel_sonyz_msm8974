@@ -64,11 +64,10 @@ MODULE_LICENSE("GPLv2");
 
 /* Resources */
 int dt2w_switch = DT2W_DEFAULT;
-bool dt2w_scr_suspended = false;
 static cputime64_t tap_time_pre = 0;
 static int touch_x = 0, touch_y = 0, touch_nr = 0, x_pre = 0, y_pre = 0;
 static bool touch_x_called = false, touch_y_called = false, touch_cnt = true;
-static bool exec_count = true;
+static bool scr_suspended = false, exec_count = true;
 //static struct notifier_block dt2w_lcd_notif;
 static struct input_dev * doubletap2wake_pwrdev;
 static DEFINE_MUTEX(pwrkeyworklock);
@@ -188,7 +187,7 @@ static void dt2w_input_event(struct input_handle *handle, unsigned int type,
 		(code==ABS_MT_TRACKING_ID) ? "ID" :
 		"undef"), code, value);
 #endif
-	if (!dt2w_scr_suspended)
+	if (!scr_suspended)
 		return;
 
 	if (code == ABS_MT_SLOT) {
@@ -219,8 +218,7 @@ static void dt2w_input_event(struct input_handle *handle, unsigned int type,
 }
 
 static int input_dev_filter(struct input_dev *dev) {
-	if (strstr(dev->name, "touch") ||
-	    strstr(dev->name, "synaptics_dsx_i2c")) {
+	if (strstr(dev->name, "touch")) {
 		return 0;
 	} else {
 		return 1;
@@ -280,11 +278,11 @@ static struct input_handler dt2w_input_handler = {
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void dt2w_early_suspend(struct early_suspend *h) {
-	dt2w_scr_suspended = true;
+	scr_suspended = true;
 }
 
 static void dt2w_late_resume(struct early_suspend *h) {
-	dt2w_scr_suspended = false;
+	scr_suspended = false;
 }
 
 static struct early_suspend dt2w_early_suspend_handler = {
@@ -419,3 +417,4 @@ static void __exit doubletap2wake_exit(void)
 
 module_init(doubletap2wake_init);
 module_exit(doubletap2wake_exit);
+
