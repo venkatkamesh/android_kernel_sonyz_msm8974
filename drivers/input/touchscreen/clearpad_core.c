@@ -4400,7 +4400,7 @@ static int __devinit clearpad_probe(struct platform_device *pdev)
 				synaptics_clearpad_threaded_handler,
 				IRQF_TRIGGER_FALLING | IRQF_ONESHOT
 #ifdef CONFIG_TOUCHSCREEN_DOUBLE_TAP_TO_WAKE
-				| IRQF_NO_SUSPEND | IRQF_EARLY_RESUME
+	| IRQF_NO_SUSPEND | IRQF_EARLY_RESUME
 #endif
 				,
 				this->pdev->dev.driver->name,
