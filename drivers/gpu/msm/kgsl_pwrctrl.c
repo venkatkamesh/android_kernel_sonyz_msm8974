@@ -45,6 +45,10 @@
 #define INIT_UDELAY		200
 #define MAX_UDELAY		2000
 
+#if defined(CONFIG_CPU_FREQ_GOV_ELEMENTALX) || defined(CONFIG_CPU_FREQ_GOV_SLIM)
+int graphics_boost = 6;
+#endif
+
 struct clk_pair {
 	const char *name;
 	uint map;
