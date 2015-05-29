@@ -22,7 +22,7 @@
 
 #if defined(CONFIG_KEXEC_HARDBOOT)
 #if defined(CONFIG_MACH_SONY_AMAMI_ROW) || (CONFIG_MACH_SONY_HONAMI_ROW) ||(CONFIG_MACH_SONY_TOGARI_ROW)
-#define KEXEC_HB_PAGE_ADDR	UL(0x39A00000)
+#define KEXEC_HB_PAGE_ADDR	UL(0x34300000)
 #else
 #error "Adress for kexec hardboot page not defined"
 #endif
