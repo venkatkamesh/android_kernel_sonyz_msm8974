@@ -26,6 +26,11 @@ obj-$(CONFIG_CPU_FREQ_GOV_LAGFREE)      += cpufreq_lagfree.o
 obj-$(CONFIG_CPU_FREQ_GOV_SMARTASSH3)	+= cpufreq_smartassH3.o
 obj-$(CONFIG_CPU_FREQ_GOV_ONDEMANDPLUS)	+= cpufreq_ondemandplus.o
 obj-$(CONFIG_CPU_FREQ_GOV_DANCEDANCE)      += cpufreq_dancedance.o
+obj-$(CONFIG_CPU_FREQ_GOV_DANCEDANCE)      += cpufreq_darkness.o
+obj-$(CONFIG_CPU_FREQ_GOV_DANCEDANCE)      += cpufreq_slim.o
+obj-$(CONFIG_CPU_FREQ_GOV_DANCEDANCE)      += cpufreq_elementalx.o
+obj-$(CONFIG_CPU_FREQ_GOV_DANCEDANCE)      += cpufreq_nightmare.o
+obj-$(CONFIG_CPU_FREQ_GOV_DANCEDANCE)      += cpufreq_nforce2.o
 
 # CPUfreq cross-arch helpers
 obj-$(CONFIG_CPU_FREQ_TABLE)		+= freq_table.o
