@@ -155,40 +155,6 @@ static struct dbs_tuners {
 	.gboost = 1,
 };
 
-static inline u64 get_cpu_idle_time_jiffy(unsigned int cpu, u64 *wall)
-{
-	u64 idle_time;
-	u64 cur_wall_time;
-	u64 busy_time;
-
-	cur_wall_time = jiffies64_to_cputime64(get_jiffies_64());
-
-	busy_time = kcpustat_cpu(cpu).cpustat[CPUTIME_USER];
-	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_SYSTEM];
-	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_IRQ];
-	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_SOFTIRQ];
-	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_STEAL];
-	busy_time += kcpustat_cpu(cpu).cpustat[CPUTIME_NICE];
-
-	idle_time = cur_wall_time - busy_time;
-	if (wall)
-		*wall = cputime_to_usecs(cur_wall_time);
-
-	return cputime_to_usecs(idle_time);
-}
-
-u64 get_cpu_idle_time(unsigned int cpu, u64 *wall, int io_busy)
-{
-	u64 idle_time = get_cpu_idle_time_us(cpu, io_busy ? wall : NULL);
-
-	if (idle_time == -1ULL)
-		return get_cpu_idle_time_jiffy(cpu, wall);
-	else if (!io_busy)
-		idle_time += get_cpu_iowait_time_us(cpu, wall);
-
-	return idle_time;
-}
-
 static ssize_t show_sampling_rate_min(struct kobject *kobj,
 				      struct attribute *attr, char *buf)
 {
@@ -700,18 +666,6 @@ static void dbs_freq_increase(struct cpufreq_policy *p, unsigned load, unsigned 
 			CPUFREQ_RELATION_L : CPUFREQ_RELATION_H);
 }
 
-static int set_two_phase_freq(int cpufreq)
-{
-	int i  = 0;
-	for ( i = 0 ; i < NR_CPUS; i++)
-		two_phase_freq_array[i] = cpufreq;
-	return 0;
-}
-
-static void set_two_phase_freq_by_cpu ( int cpu_nr, int cpufreq){
-	two_phase_freq_array[cpu_nr-1] = cpufreq;
-}
-
 static int input_event_boosted(void)
 {
 	unsigned long flags;
@@ -1166,9 +1120,6 @@ static struct input_handler dbs_input_handler = {
 };
 
 
-static void set_input_event_min_freq_by_cpu ( int cpu_nr, int cpufreq){
-	input_event_min_freq_array[cpu_nr-1] = cpufreq;
-}
 static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 				   unsigned int event)
 {

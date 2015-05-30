@@ -208,8 +208,6 @@ static void cpufreq_savagedzen_timer(unsigned long data)
         if (this_savagedzen->idle_exit_time == 0 || update_time == this_savagedzen->idle_exit_time)
                 return;
 
-        delta_idle = cputime64_sub(now_idle, this_savagedzen->time_in_idle);
-        delta_time = cputime64_sub(update_time, this_savagedzen->idle_exit_time);
         //printk(KERN_INFO "savagedzenT: t=%llu i=%llu\n",cputime64_sub(update_time,this_savagedzen->idle_exit_time),delta_idle);
 
         // If timer ran less than 1ms after short-term sample started, retry.
@@ -237,10 +235,6 @@ static void cpufreq_savagedzen_timer(unsigned long data)
                 if (nr_running() < 1)
                         return;
 
-                if (cputime64_sub(update_time, this_savagedzen->freq_change_time) < up_rate_us)
-                        return;
-
-
                 this_savagedzen->force_ramp_up = 1;
                 cpumask_set_cpu(data, &work_cpumask);
                 queue_work(up_wq, &freq_scale_work);
@@ -264,8 +258,6 @@ static void cpufreq_savagedzen_timer(unsigned long data)
          * Do not scale down unless we have been at this frequency for the
          * minimum sample time.
          */
-        if (cputime64_sub(update_time, this_savagedzen->freq_change_time) < down_rate_us)
-                return;
 
         cpumask_set_cpu(data, &work_cpumask);
         queue_work(down_wq, &freq_scale_work);
@@ -636,51 +628,6 @@ static int cpufreq_governor_savagedzen(struct cpufreq_policy *new_policy,
         }
 
         return 0;
-}
-
-static void savagedzen_suspend(int cpu, int suspend)
-{
-        struct savagedzen_info_s *this_savagedzen = &per_cpu(savagedzen_info, smp_processor_id());
-        struct cpufreq_policy *policy = this_savagedzen->cur_policy;
-        unsigned int new_freq;
-
-        if (!this_savagedzen->enable || sleep_max_freq==0) // disable behavior for sleep_max_freq==0
-                return;
-
-        savagedzen_update_min_max(this_savagedzen,policy,suspend);
-        if (suspend) {
-            if (policy->cur > this_savagedzen->max_speed) {
-                    new_freq = this_savagedzen->max_speed;
-
-                    if (debug_mask & SAVAGEDZEN_DEBUG_JUMPS)
-                            printk(KERN_INFO "savagedzenS: suspending at %d\n",new_freq);
-
-                    __cpufreq_driver_target(policy, new_freq,
-                                            CPUFREQ_RELATION_H);
-            }
-        } else { // resume at max speed:
-                new_freq = validate_freq(this_savagedzen,sleep_wakeup_freq);
-
-                if (debug_mask & SAVAGEDZEN_DEBUG_JUMPS)
-                        printk(KERN_INFO "savagedzenS: awaking at %d\n",new_freq);
-
-                __cpufreq_driver_target(policy, new_freq,
-                                        CPUFREQ_RELATION_L);
-        }
-}
-
-static void savagedzen_early_suspend(struct early_suspend *handler) {
-        int i;
-        suspended = 1;
-        for_each_online_cpu(i)
-                savagedzen_suspend(i,1);
-}
-
-static void savagedzen_late_resume(struct early_suspend *handler) {
-        int i;
-        suspended = 0;
-        for_each_online_cpu(i)
-                savagedzen_suspend(i,0);
 }
 
 static int __init cpufreq_savagedzen_init(void)
