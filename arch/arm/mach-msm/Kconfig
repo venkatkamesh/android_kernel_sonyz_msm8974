@@ -1900,7 +1900,7 @@ config MSM_DALRPC_TEST
 config MSM_MPDEC
 	bool "Enable kernel based mpdecision"
 	depends on MSM_SMP
-	default y
+	default n
 	help
 	  This enables kernel based multi core control.
 	  (up/down hotplug based on load)
