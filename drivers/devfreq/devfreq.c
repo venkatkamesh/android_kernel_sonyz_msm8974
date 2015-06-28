@@ -133,10 +133,8 @@ static int devfreq_update_status(struct devfreq *devfreq, unsigned long freq)
 	cur_time = jiffies;
 
 	prev_lev = devfreq_get_freq_level(devfreq, devfreq->previous_freq);
-	if (prev_lev < 0) {
-		ret = prev_lev;
-		goto out;
-	}
+	if (prev_lev < 0) 
+		return 0;
 
 	if (lev != prev_lev) {
 		devfreq->trans_table[(prev_lev *
