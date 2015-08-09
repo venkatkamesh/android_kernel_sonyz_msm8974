@@ -201,7 +201,8 @@ enum maxim_report_id {
 };
 
 enum maxim_power_mode {
-	MXM_PWR_SLEEP_MODE  = 0x0000,
+	//MXM_PWR_SLEEP_MODE  = 0x0000,
+	MXM_PWR_SLEEP_MODE  = 0x0001,
 	MXM_ACTIVE_MODE     = 0x0002,
 	MXM_WAKEUP_MODE     = 0x0006,
 };
@@ -253,6 +254,9 @@ struct report_reader {
 	struct semaphore sem;
 	int status;
 };
+
+int dt2wactive = 1;
+int dt2wcount = 2;
 
 struct data {
 	struct max1187x_pdata *pdata;
@@ -797,11 +801,13 @@ static void report_wakeup_gesture(struct data *ts,
 				  struct max1187x_touch_report_header *header)
 {
 	struct device *dev = &ts->client->dev;
-	u16 code = header->touch_count | (header->reserved0 << 4);
+//	u16 code = header->touch_count | (header->reserved0 << 4);
 
-	dev_dbg(dev, "event: Received gesture: (0x%04X)\n", code);
-	if (code == MXM_PWR_DATA_WAKEUP_GEST) {
-		dev_dbg(dev, "event: Received touch wakeup report\n");
+//	dev_dbg(dev, "event: Received gesture: (0x%04X)\n", code);
+//	if (code == MXM_PWR_DATA_WAKEUP_GEST) {
+//		dev_dbg(dev, "event: Received touch wakeup report\n");
+	dev_dbg(dev, "event: Received touch wakeup report\n");
+	if (dt2wactive == 1 && header->touch_count >= dt2wcount) {
 		if (ts->input_dev_key->users) {
 			input_report_key(ts->input_dev_key, KEY_POWER, 1);
 			input_sync(ts->input_dev_key);
@@ -825,8 +831,9 @@ static void process_report(struct data *ts, u16 *buf)
 		goto end;
 
 #ifdef MXM_TOUCH_WAKEUP_FEATURE
-	if (header->report_id == MXM_RPT_ID_POWER_MODE
-	    && device_may_wakeup(dev) && ts->is_suspended) {
+//	if (header->report_id == MXM_RPT_ID_POWER_MODE
+//	    && device_may_wakeup(dev) && ts->is_suspended) {
+	if (ts->is_suspended) {
 		report_wakeup_gesture(ts, header);
 		goto end;
 	}
@@ -1022,6 +1029,47 @@ end:
 	ts->fw_update_mode = MXM_FW_UPDATE_DEFAULT;
 	mutex_unlock(&ts->fw_mutex);
 	return ret;
+}
+
+//NO ERROR CHECK FOR NOW!!!!
+
+//Thanks to https://github.com/showp1984/ !!!
+static ssize_t dt2w_active_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	size_t count = 0;
+	count += sprintf(buf, "%d\n", dt2wactive);
+	
+	return count;
+}
+
+static ssize_t dt2w_active_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	if (buf[0] >= '0' && buf[0] <= '1' && buf[1] == '\n')
+                if (dt2wactive != buf[0] - '0')
+		        dt2wactive = buf[0] - '0';
+	
+	return count;
+}
+
+static DEVICE_ATTR(dt2w_active, (S_IWUSR|S_IRUGO), dt2w_active_show, dt2w_active_store);
+
+static struct kobject *android_dt2w_kobj;
+
+static int dt2w_sysfs_init(void)
+{
+	int ret;
+
+	android_dt2w_kobj = kobject_create_and_add("android_dt2w", NULL);
+	ret=sysfs_create_file(android_dt2w_kobj, &dev_attr_dt2w_active.attr);
+	return 0;
+}
+
+static void dt2w_sysfs_deinit(void)
+{
+	sysfs_remove_file(android_dt2w_kobj, &dev_attr_dt2w_active.attr);
+	kobject_del(android_dt2w_kobj);
 }
 
 static ssize_t irq_count_show(struct device *dev,
@@ -2264,6 +2312,7 @@ static int probe(struct i2c_client *client, const struct i2c_device_id *id)
 	if (ret)
 		dev_err(dev, "sysfs_create_link error\n");
 
+	dt2w_sysfs_init();
 #ifdef MXM_TOUCH_WAKEUP_FEATURE
 	dev_info(dev, "Touch Wakeup Feature enabled\n");
 	device_init_wakeup(&client->dev, 1);
@@ -2335,6 +2384,7 @@ static int remove(struct i2c_client *client)
 #endif
 	sysfs_remove_link(ts->input_dev->dev.kobj.parent,
 						MAX1187X_NAME);
+	dt2w_sysfs_deinit();
 	input_unregister_device(ts->input_dev);
 	input_unregister_device(ts->input_pen);
 
@@ -2499,7 +2549,7 @@ static void set_suspend_mode(struct data *ts)
 	ts->is_suspended = true;
 
 #ifdef MXM_TOUCH_WAKEUP_FEATURE
-	if (device_may_wakeup(&ts->client->dev))
+//	if (device_may_wakeup(&ts->client->dev))
 		cmd_buf[2] = MXM_WAKEUP_MODE;
 #endif
 	ret = cmd_send(ts, cmd_buf, 3);
@@ -2512,7 +2562,7 @@ static void set_suspend_mode(struct data *ts)
 	}
 
 #ifdef MXM_TOUCH_WAKEUP_FEATURE
-	if (device_may_wakeup(&ts->client->dev))
+//	if (device_may_wakeup(&ts->client->dev))
 		enable_irq(ts->client->irq);
 #endif
 
@@ -2533,7 +2583,7 @@ static void set_resume_mode(struct data *ts)
 	usleep_range(MXM_WAIT_MIN_US, MXM_WAIT_MAX_US);
 
 #ifdef MXM_TOUCH_WAKEUP_FEATURE
-	if (device_may_wakeup(&ts->client->dev))
+//	if (device_may_wakeup(&ts->client->dev))
 		disable_irq(ts->client->irq);
 #endif
 
@@ -2615,7 +2665,7 @@ static int suspend(struct device *dev)
 #endif
 
 #ifdef MXM_TOUCH_WAKEUP_FEATURE
-	if (device_may_wakeup(&client->dev))
+//	if (device_may_wakeup(&client->dev))
 		enable_irq_wake(client->irq);
 #endif
 
@@ -2632,7 +2682,7 @@ static int resume(struct device *dev)
 	dev_dbg(&ts->client->dev, "%s: Enter\n", __func__);
 
 #ifdef MXM_TOUCH_WAKEUP_FEATURE
-	if (device_may_wakeup(&client->dev))
+//	if (device_may_wakeup(&client->dev))
 		disable_irq_wake(client->irq);
 #endif
 
@@ -3003,3 +3053,4 @@ MODULE_AUTHOR("Maxim Integrated Products, Inc.");
 MODULE_DESCRIPTION("MAX1187X Touchscreen Driver");
 MODULE_LICENSE("GPL v2");
 MODULE_VERSION("3.1.8");
+
