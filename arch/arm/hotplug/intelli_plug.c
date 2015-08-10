@@ -38,11 +38,11 @@
 
 #define DEF_SAMPLING_MS			(268)
 
-#define DUAL_PERSISTENCE		(2500 / DEF_SAMPLING_MS)
-#define TRI_PERSISTENCE			(1700 / DEF_SAMPLING_MS)
-#define QUAD_PERSISTENCE		(1000 / DEF_SAMPLING_MS)
+#define DUAL_PERSISTENCE		(2800 / DEF_SAMPLING_MS)
+#define TRI_PERSISTENCE			(1800 / DEF_SAMPLING_MS)
+#define QUAD_PERSISTENCE		(1200 / DEF_SAMPLING_MS)
 
-#define BUSY_PERSISTENCE		(3500 / DEF_SAMPLING_MS)
+#define BUSY_PERSISTENCE		(3700 / DEF_SAMPLING_MS)
 
 static DEFINE_MUTEX(intelli_plug_mutex);
 
@@ -410,6 +410,7 @@ static void wakeup_boost(void)
 	}
 }
 
+
 #ifdef CONFIG_POWERSUSPEND
 static void __cpuinit intelli_plug_resume(struct power_suspend *handler)
 #else
@@ -583,4 +584,3 @@ MODULE_DESCRIPTION("'intell_plug' - An intelligent cpu hotplug driver for "
 MODULE_LICENSE("GPL");
 
 late_initcall(intelli_plug_init);
-
