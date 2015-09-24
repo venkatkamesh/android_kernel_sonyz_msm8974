@@ -31,10 +31,6 @@
 #include <linux/debugfs.h>
 #endif
 #include <linux/sched.h>
-#ifdef CONFIG_FB
-#include <linux/notifier.h>
-#include <linux/fb.h>
-#endif
 #ifdef CONFIG_ARM
 #include <asm/mach-types.h>
 #endif
@@ -446,11 +442,9 @@ struct synaptics_clearpad {
 	int active;
 	int irq;
 	int irq_mask;
-#ifdef CONFIG_FB
-	struct notifier_block fb_notif;
-	struct work_struct notify_resume;
-	struct work_struct notify_suspend;
-#endif
+
+	int screen_status;
+
 	char fwname[SYNAPTICS_STRING_LENGTH + 1];
 	char result_info[SYNAPTICS_STRING_LENGTH + 1];
 	wait_queue_head_t task_none_wq;
@@ -558,6 +552,8 @@ static bool is_close_to_previous_hit(int x, int y)
 static void synaptics_funcarea_initialize(struct synaptics_clearpad *this);
 static void synaptics_clearpad_reset_power(struct synaptics_clearpad *this,
 					   const char *cause);
+static void synaptics_clearpad_resume(struct device *dev);
+static void synaptics_clearpad_suspend(struct device *dev);
 
 static char *make_string(u8 *array, size_t size)
 {
@@ -3221,6 +3217,10 @@ static ssize_t synaptics_clearpad_state_show(struct device *dev,
 	else if (!strncmp(attr->attr.name, __stringify(glove), PAGE_SIZE))
 		snprintf(buf, PAGE_SIZE,
 			"%d", this->glove_enabled);
+	else if (!strncmp(attr->attr.name, __stringify(screen_status),
+								PAGE_SIZE))
+		snprintf(buf, PAGE_SIZE,
+			"%d", this->screen_status);
 	else
 		snprintf(buf, PAGE_SIZE, "illegal sysfs file");
 	return strnlen(buf, PAGE_SIZE);
@@ -3380,6 +3380,38 @@ static ssize_t synaptics_clearpad_wakeup_gesture_store(struct device *dev,
 	return strnlen(buf, PAGE_SIZE);
 }
 
+static ssize_t synaptics_screen_status_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t size)
+{
+	struct synaptics_clearpad *this = dev_get_drvdata(dev);
+
+	dev_dbg(&this->pdev->dev, "%s: start\n", __func__);
+
+	LOCK(this);
+
+	if (sscanf(buf, "%d", &this->screen_status) != 1) {
+		dev_err(dev, "bad value (%s)", buf);
+		return -EINVAL;
+	}
+	dev_dbg(&this->pdev->dev, "%s: screen_status = %d\n", __func__,
+				this->screen_status);
+
+	if (this->screen_status) {
+		if (!(this->active & SYN_ACTIVE_POWER))
+			synaptics_clearpad_resume(&this->pdev->dev);
+	} else {
+		if (this->active & SYN_ACTIVE_POWER)
+			synaptics_clearpad_suspend(&this->pdev->dev);
+	}
+
+	UNLOCK(this);
+
+	synaptics_clearpad_set_power(this);
+
+	return strnlen(buf, PAGE_SIZE);
+}
+
 static struct device_attribute clearpad_sysfs_attrs[] = {
 	__ATTR(fwinfo, S_IRUGO, synaptics_clearpad_state_show, 0),
 	__ATTR(fwfamily, S_IRUGO, synaptics_clearpad_state_show, 0),
@@ -3394,6 +3426,8 @@ static struct device_attribute clearpad_sysfs_attrs[] = {
 				synaptics_clearpad_pen_enabled_store),
 	__ATTR(glove, S_IRUGO | S_IWUSR, synaptics_clearpad_state_show,
 				synaptics_clearpad_glove_enabled_store),
+	__ATTR(screen_status, S_IRUGO | S_IWUSR, synaptics_clearpad_state_show,
+				synaptics_screen_status_store)
 };
 
 static struct device_attribute clearpad_wakeup_gesture_attr =
@@ -3524,13 +3558,11 @@ static int synaptics_clearpad_input_ev_init(struct synaptics_clearpad *this)
 	return rc;
 }
 
-static int synaptics_clearpad_suspend(struct device *dev)
+static void synaptics_clearpad_suspend(struct device *dev)
 {
 	struct synaptics_clearpad *this = dev_get_drvdata(dev);
-	int rc = 0;
 	bool go_suspend;
 
-	LOCK(this);
 	go_suspend = (this->task != SYN_TASK_NO_SUSPEND);
 	if (go_suspend)
 		this->active |= SYN_STANDBY;
@@ -3539,21 +3571,13 @@ static int synaptics_clearpad_suspend(struct device *dev)
 
 	LOG_STAT(this, "active: %x (task: %s)\n",
 		 this->active, task_name[this->task]);
-	UNLOCK(this);
-
-	rc = synaptics_clearpad_set_power(this);
-	if (rc && this->reset_count >= SYNAPTICS_RETRY_NUM_OF_RESET)
-		rc = 0; /* stop retry of recovery */
-	return rc;
 }
 
-static int synaptics_clearpad_resume(struct device *dev)
+static void synaptics_clearpad_resume(struct device *dev)
 {
 	struct synaptics_clearpad *this = dev_get_drvdata(dev);
-	int rc = 0;
 	bool go_resume;
 
-	LOCK(this);
 	go_resume = !!(this->active & (SYN_STANDBY | SYN_STANDBY_AFTER_TASK));
 	if (go_resume)
 		this->active &= ~(SYN_STANDBY | SYN_STANDBY_AFTER_TASK);
@@ -3562,12 +3586,6 @@ static int synaptics_clearpad_resume(struct device *dev)
 		 this->active, task_name[this->task]);
 
 	synaptics_funcarea_invalidate_all(this);
-	UNLOCK(this);
-
-	rc = synaptics_clearpad_set_power(this);
-	if (rc && this->reset_count >= SYNAPTICS_RETRY_NUM_OF_RESET)
-		rc = 0; /* stop retry of recovery */
-	return rc;
 }
 
 static int synaptics_clearpad_pm_suspend(struct device *dev)
@@ -3585,12 +3603,16 @@ static int synaptics_clearpad_pm_suspend(struct device *dev)
 	this->dev_busy = true;
 	spin_unlock_irqrestore(&this->slock, flags);
 
-#ifdef CONFIG_FB
-	if (this->active & SYN_ACTIVE_POWER)
-#endif
-		rc = synaptics_clearpad_suspend(&this->pdev->dev);
-	if (rc)
-		return rc;
+	if (this->active & SYN_ACTIVE_POWER) {
+		synaptics_clearpad_suspend(&this->pdev->dev);
+		rc = synaptics_clearpad_set_power(this);
+		if (rc) {
+			if (this->reset_count >= SYNAPTICS_RETRY_NUM_OF_RESET)
+				rc = 0; /* stop retry of recovery */
+			else
+				return rc;
+		}
+	}
 
 	if (device_may_wakeup(dev)) {
 		enable_irq_wake(this->irq);
@@ -3622,10 +3644,13 @@ static int synaptics_clearpad_pm_resume(struct device *dev)
 		rc = synaptics_clearpad_process_irq(this);
 	}
 
-#ifdef CONFIG_FB
-	if (irq_pending)
-#endif
-		(void)(rc ? rc : synaptics_clearpad_resume(&this->pdev->dev));
+	if (irq_pending) {
+		if (!rc) {
+			synaptics_clearpad_resume(&this->pdev->dev);
+			synaptics_clearpad_set_power(this);
+		}
+	}
+
 	return 0;
 }
 
@@ -3638,51 +3663,6 @@ static int synaptics_clearpad_pm_suspend_noirq(struct device *dev)
 	}
 	return 0;
 }
-
-#ifdef CONFIG_FB
-static void synaptics_notify_resume(struct work_struct *work)
-{
-	struct synaptics_clearpad *this = container_of(work,
-			struct synaptics_clearpad, notify_resume);
-
-	if (!(this->active & SYN_ACTIVE_POWER))
-		synaptics_clearpad_resume(&this->pdev->dev);
-}
-
-static void synaptics_notify_suspend(struct work_struct *work)
-{
-	struct synaptics_clearpad *this = container_of(work,
-			struct synaptics_clearpad, notify_suspend);
-
-	if (this->active & SYN_ACTIVE_POWER)
-		synaptics_clearpad_suspend(&this->pdev->dev);
-}
-
-static int synaptics_fb_notifier_callback(struct notifier_block *self,
-				unsigned long event, void *data)
-{
-	struct fb_event *evdata = data;
-	int *blank;
-	struct synaptics_clearpad *this =
-		container_of(self, struct synaptics_clearpad, fb_notif);
-
-	if (evdata && evdata->data && event == FB_EVENT_BLANK && this &&
-			this->pdev) {
-		blank = evdata->data;
-		if (*blank == FB_BLANK_UNBLANK) {
-			cancel_work_sync(&this->notify_suspend);
-			cancel_work_sync(&this->notify_resume);
-			schedule_work(&this->notify_resume);
-		} else if (*blank == FB_BLANK_POWERDOWN) {
-			cancel_work_sync(&this->notify_resume);
-			cancel_work_sync(&this->notify_suspend);
-			schedule_work(&this->notify_suspend);
-		}
-	}
-
-	return 0;
-}
-#endif
 
 #ifdef CONFIG_DEBUG_FS
 static int clearpad_get_num_tx_physical(struct synaptics_clearpad *this,
@@ -4364,21 +4344,10 @@ static int __devinit clearpad_probe(struct platform_device *pdev)
 
 	this->state = SYN_STATE_RUNNING;
 
-#ifdef CONFIG_FB
-	this->fb_notif.notifier_call = synaptics_fb_notifier_callback;
-	rc = fb_register_client(&this->fb_notif);
-	if (rc) {
-		dev_err(&this->pdev->dev, "Unable to register fb_notifier\n");
-	} else {
-		INIT_WORK(&this->notify_resume, synaptics_notify_resume);
-		INIT_WORK(&this->notify_suspend, synaptics_notify_suspend);
-	}
-#endif
-
 	/* sysfs */
 	rc = create_sysfs_entries(this);
 	if (rc)
-		goto err_unregister_fb;
+		goto err_input_device_pen;
 
 #ifdef CONFIG_DEBUG_FS
 	/* debugfs */
@@ -4428,10 +4397,6 @@ err_sysfs_remove_group:
 	debugfs_remove_recursive(this->debugfs);
 #endif
 	remove_sysfs_entries(this);
-err_unregister_fb:
-#ifdef CONFIG_FB
-	fb_unregister_client(&this->fb_notif);
-#endif
 err_input_device_pen:
 	input_unregister_device(this->input_pen);
 err_input_device:
@@ -4478,11 +4443,6 @@ static int __devexit clearpad_remove(struct platform_device *pdev)
 	debugfs_remove_recursive(this->debugfs);
 #endif
 	remove_sysfs_entries(this);
-#ifdef CONFIG_FB
-	fb_unregister_client(&this->fb_notif);
-	cancel_work_sync(&this->notify_resume);
-	cancel_work_sync(&this->notify_suspend);
-#endif
 	input_unregister_device(this->input);
 	input_unregister_device(this->input_pen);
 	clearpad_gpio_configure(this, 0);

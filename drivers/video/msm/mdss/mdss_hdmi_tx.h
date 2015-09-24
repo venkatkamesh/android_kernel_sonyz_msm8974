@@ -39,6 +39,7 @@ enum hdmi_tx_power_module_type {
 /* Data filled from device tree */
 struct hdmi_tx_platform_data {
 	bool primary;
+	bool cond_power_on;
 	struct dss_io_data io[HDMI_TX_MAX_IO];
 	struct dss_module_power power_data[HDMI_TX_MAX_PM];
 };
@@ -60,6 +61,7 @@ struct hdmi_tx_ctrl {
 
 	struct mutex mutex;
 	struct mutex lut_lock;
+	struct mutex power_mutex;
 	struct mutex cable_notify_mutex;
 	struct list_head cable_notify_handlers;
 	struct kobject *kobj;
@@ -80,14 +82,17 @@ struct hdmi_tx_ctrl {
 	u32 vote_hdmi_core_on;
 	u8  timing_gen_on;
 	u32 mhl_max_pclk;
-	struct completion hpd_done;
+	u8  mhl_hpd_on;
+
+	struct completion hpd_int_done;
+	struct completion hpd_off_done;
 	struct work_struct hpd_int_work;
 
-	struct work_struct power_off_work;
 	struct work_struct cable_notify_work;
 
 	bool hdcp_feature_on;
 	bool ds_registered;
+	bool hpd_disabled;
 	u32 present_hdcp;
 	u8 aksv[5];
 	enum hdmi_hdcp_state hdcp_status;

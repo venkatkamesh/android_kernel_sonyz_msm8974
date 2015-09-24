@@ -1713,6 +1713,61 @@ static const struct file_operations sel_trap_clear_exceptions_ops = {
 	.llseek		= generic_file_llseek,
 };
 
+static ssize_t sel_read_trap_debug(struct file *filp, char __user *buf,
+				size_t count, loff_t *ppos)
+{
+	char tmpbuf[2];
+	ssize_t length;
+
+	length = scnprintf(tmpbuf, sizeof(tmpbuf), "%d", selinux_trap_debug);
+	return simple_read_from_buffer(buf, count, ppos, tmpbuf, length);
+}
+
+static ssize_t sel_write_trap_debug(struct file *file, const char __user *buf,
+				 size_t count, loff_t *ppos)
+
+{
+	char *page = NULL;
+	ssize_t length;
+	int new_value;
+
+	length = -ENOMEM;
+	if (count >= PAGE_SIZE)
+		goto out;
+
+	/* No partial writes. */
+	length = EINVAL;
+	if (*ppos != 0)
+		goto out;
+
+	length = -ENOMEM;
+	page = (char *)get_zeroed_page(GFP_KERNEL);
+	if (!page)
+		goto out;
+
+	length = -EFAULT;
+	if (copy_from_user(page, buf, count))
+		goto out;
+
+	length = -EINVAL;
+	if (sscanf(page, "%d", &new_value) != 1)
+		goto out;
+
+	if (new_value >= TRAP_LOGLEVEL_MINIMUM && new_value < TRAP_LOGLEVEL_MAX)
+		selinux_trap_debug = new_value;
+
+	length = count;
+out:
+	free_page((unsigned long) page);
+	return length;
+}
+
+static const struct file_operations sel_trap_debug_ops = {
+	.read		= sel_read_trap_debug,
+	.write		= sel_write_trap_debug,
+	.llseek		= generic_file_llseek,
+};
+
 static struct dentry *trapped_dentry;
 
 static int sel_make_trap_files(struct dentry *dir)
@@ -1727,6 +1782,8 @@ static int sel_make_trap_files(struct dentry *dir)
 		  &sel_trap_add_exception_ops, S_IWUSR },
 		{ "clear_exceptions",
 		  &sel_trap_clear_exceptions_ops, S_IWUSR },
+		{ "debug",
+		  &sel_trap_debug_ops, S_IRUGO|S_IWUSR },
 	};
 
 	for (i = 0; i < ARRAY_SIZE(files); i++) {

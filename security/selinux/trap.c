@@ -17,6 +17,8 @@
 #include <linux/limits.h>
 #include <linux/fs.h>
 #include <asm/siginfo.h>
+#include <linux/highmem.h>
+#include <linux/pagemap.h>
 #include "avc_ss.h"
 #include "trap.h"
 
@@ -46,12 +48,8 @@ enum string_lsm_audit_data {
 	STRING_LSM_AUDIT_DATA_MAX
 };
 
-struct _trapwork {
-	struct work_struct work;
-	struct task_struct *task;
-};
-
 int selinux_trap_enable;
+int selinux_trap_debug;
 struct selinux_trap_list selinux_trap_list_head;
 struct selinux_trap_process_list selinux_trap_process_list_head;
 struct semaphore selinux_trap_list_sem;
@@ -81,11 +79,11 @@ static int cmp_polarity(char *rule, int c)
 	int rc;
 
 	if (!rule) {
-		pr_devel("SELinux: trap: no rule for name\n");
+		trap_devel_log("SELinux: trap: no rule for name\n");
 		return 1;	/* Only + or - string / not NULL */
 	}
 
-	pr_devel("SELinux: trap: compare rule '%s' with polarity '%c'\n",
+	trap_devel_log("SELinux: trap: compare rule '%s' with polarity '%c'\n",
 		rule, c);
 
 	if (rule[0] == c)
@@ -94,9 +92,9 @@ static int cmp_polarity(char *rule, int c)
 		rc = 1;		/* Unmatched */
 
 	if (rc)
-		pr_devel("SELinux: trap: different\n");
+		trap_devel_log("SELinux: trap: different\n");
 	else
-		pr_devel("SELinux: trap: identical\n");
+		trap_devel_log("SELinux: trap: identical\n");
 
 	return rc;
 }
@@ -110,7 +108,7 @@ static int cmp_scontext(char *rule, struct common_audit_data *ad)
 	u32 ssid = ad->selinux_audit_data->slad->ssid;
 
 	if (!rule) {
-		pr_devel("SELinux: trap: no rule for scontext\n");
+		trap_devel_log("SELinux: trap: no rule for scontext\n");
 		return 0;
 	}
 	rc = security_sid_to_context(ssid, &scontext, &scontext_len);
@@ -120,14 +118,14 @@ static int cmp_scontext(char *rule, struct common_audit_data *ad)
 		return 0;
 	}
 
-	pr_devel("SELinux: trap: compare rule '%s' with scontext '%s'\n",
+	trap_devel_log("SELinux: trap: compare rule '%s' with scontext '%s'\n",
 		rule, scontext);
 
 	rc = cmp_string(rule, scontext, scontext_len);
 	if (rc)
-		pr_devel("SELinux: trap: different\n");
+		trap_devel_log("SELinux: trap: different\n");
 	else
-		pr_devel("SELinux: trap: identical\n");
+		trap_devel_log("SELinux: trap: identical\n");
 
 	kfree(scontext);
 	return rc;
@@ -142,7 +140,7 @@ static int cmp_tcontext(char *rule, struct common_audit_data *ad)
 	u32 tsid = ad->selinux_audit_data->slad->tsid;
 
 	if (!rule) {
-		pr_devel("SELinux: trap: no rule for tcontext\n");
+		trap_devel_log("SELinux: trap: no rule for tcontext\n");
 		return 0;
 	}
 
@@ -153,14 +151,14 @@ static int cmp_tcontext(char *rule, struct common_audit_data *ad)
 		return 0;
 	}
 
-	pr_devel("SELinux: trap: compare rule '%s' with tcontext '%s'\n",
+	trap_devel_log("SELinux: trap: compare rule '%s' with tcontext '%s'\n",
 		rule, tcontext);
 
 	rc = cmp_string(rule, tcontext, tcontext_len);
 	if (rc)
-		pr_devel("SELinux: trap: different\n");
+		trap_devel_log("SELinux: trap: different\n");
 	else
-		pr_devel("SELinux: trap: identical\n");
+		trap_devel_log("SELinux: trap: identical\n");
 
 	kfree(tcontext);
 	return rc;
@@ -173,22 +171,22 @@ static int cmp_tclass(char *rule, struct common_audit_data *ad)
 	u16 tclass = ad->selinux_audit_data->slad->tclass;
 
 	if (!rule) {
-		pr_devel("SELinux: trap: no rule for tclass\n");
+		trap_devel_log("SELinux: trap: no rule for tclass\n");
 		return 0;
 	}
 
 	BUG_ON(tclass >= secclass_map_size);
 
-	pr_devel("SELinux: trap: compare rule '%s' with tclass '%s'\n",
+	trap_devel_log("SELinux: trap: compare rule '%s' with tclass '%s'\n",
 		rule, secclass_map[tclass-1].name);
 
 	rc = cmp_string(rule, secclass_map[tclass-1].name,
 		strlen(secclass_map[tclass-1].name));
 
 	if (rc)
-		pr_devel("SELinux: trap: different\n");
+		trap_devel_log("SELinux: trap: different\n");
 	else
-		pr_devel("SELinux: trap: identical\n");
+		trap_devel_log("SELinux: trap: identical\n");
 
 	return rc;
 }
@@ -196,24 +194,33 @@ static int cmp_tclass(char *rule, struct common_audit_data *ad)
 /* return 0 = identical / not 0 = different */
 static int get_pname(struct task_struct *task, char *zeroed_page)
 {
-	int res = 0;
 	unsigned int arg_len;
 	struct mm_struct *mm = get_task_mm(task);
+	struct vm_area_struct *vma;
+	int offset;
+	void *maddr;
+	struct page *page = NULL;
+
 	if (!mm)
-		return res;
+		return 0;
 	if (!mm->arg_end) {
 		mmput(mm);
-		return res;
+		return 0;
 	}
 	arg_len = mm->arg_end - mm->arg_start;
 
-	if (arg_len >= PAGE_SIZE)
-		arg_len = PAGE_SIZE-1;
-
-	res = access_process_vm(task, mm->arg_start, zeroed_page, arg_len, 0);
+	get_user_pages(task, mm, mm->arg_start, 1, 0, 1, &page, &vma);
+	offset = mm->arg_start & (PAGE_SIZE-1);
+	if (arg_len > PAGE_SIZE-offset)
+		arg_len = PAGE_SIZE-offset;
+	maddr = kmap(page);
+	copy_from_user_page(vma, page, mm->arg_start, zeroed_page,
+		maddr + offset, arg_len);
+	kunmap(page);
+	page_cache_release(page);
 
 	mmput(mm);
-	return res;
+	return 1;
 }
 
 /* return 0 = identical / not 0 = different */
@@ -223,7 +230,7 @@ static int cmp_pname(char *rule, struct common_audit_data *ad)
 	char *pname = NULL;
 
 	if (!rule) {
-		pr_devel("SELinux: trap: no rule for pname\n");
+		trap_devel_log("SELinux: trap: no rule for pname\n");
 		return 0;
 	}
 
@@ -233,9 +240,7 @@ static int cmp_pname(char *rule, struct common_audit_data *ad)
 		return 0;
 	}
 
-	rcu_read_lock();
 	rc = get_pname(current, pname);
-	rcu_read_unlock();
 
 	if (rc <= 0) {
 		pr_err("SELinux: trap: get_pname failed\n");
@@ -243,14 +248,14 @@ static int cmp_pname(char *rule, struct common_audit_data *ad)
 		return 0;
 	}
 
-	pr_devel("SELinux: trap: compare rule '%s' with pname '%s'\n",
+	trap_devel_log("SELinux: trap: compare rule '%s' with pname '%s'\n",
 		rule, pname);
 
-	rc = cmp_string(rule, current->comm, strlen(current->comm));
+	rc = cmp_string(rule, pname, strlen(pname));
 	if (rc)
-		pr_devel("SELinux: trap: different\n");
+		trap_devel_log("SELinux: trap: different\n");
 	else
-		pr_devel("SELinux: trap: identical\n");
+		trap_devel_log("SELinux: trap: identical\n");
 
 	free_page((unsigned long) pname);
 	return rc;
@@ -263,7 +268,7 @@ static int cmp_pname_parent(char *rule, struct common_audit_data *ad)
 	char *pname = NULL;
 
 	if (!rule) {
-		pr_devel("SELinux: trap: no rule for pname_parent\n");
+		trap_devel_log("SELinux: trap: no rule for pname_parent\n");
 		return 0;
 	}
 
@@ -273,24 +278,22 @@ static int cmp_pname_parent(char *rule, struct common_audit_data *ad)
 		return 0;
 	}
 
-	rcu_read_lock();
 	rc = get_pname(current->parent, pname);
-	rcu_read_unlock();
 
 	if (rc <= 0) {
-		pr_err("SELinux: trap: get_pname failed\n");
+		pr_err("SELinux: trap: get_pname(parent) failed\n");
 		free_page((unsigned long) pname);
 		return 0;
 	}
 
-	pr_devel("SELinux: trap: compare rule '%s' with pname_parent '%s'\n",
+	trap_devel_log("SELinux: trap: compare rule '%s' with pname_parent '%s'\n",
 		rule, pname);
 
-	rc = cmp_string(rule, current->comm, strlen(current->comm));
+	rc = cmp_string(rule, pname, strlen(pname));
 	if (rc)
-		pr_devel("SELinux: trap: different\n");
+		trap_devel_log("SELinux: trap: different\n");
 	else
-		pr_devel("SELinux: trap: identical\n");
+		trap_devel_log("SELinux: trap: identical\n");
 
 	free_page((unsigned long) pname);
 	return rc;
@@ -303,7 +306,7 @@ static int cmp_pname_pgl(char *rule, struct common_audit_data *ad)
 	char *pname = NULL;
 
 	if (!rule) {
-		pr_devel("SELinux: trap: no rule for pname_pgl\n");
+		trap_devel_log("SELinux: trap: no rule for pname_pgl\n");
 		return 0;
 	}
 
@@ -313,24 +316,26 @@ static int cmp_pname_pgl(char *rule, struct common_audit_data *ad)
 		return 0;
 	}
 
-	rcu_read_lock();
-	rc = get_pname(current->group_leader, pname);
-	rcu_read_unlock();
+	if (current->group_leader->pid != current->pid) {
+		rc = get_pname(current->group_leader, pname);
+	} else {
+		rc = get_pname(current->parent->group_leader, pname);
+	}
 
 	if (rc <= 0) {
-		pr_err("SELinux: trap: get_pname failed\n");
+		pr_err("SELinux: trap: get_pname(pgl) failed\n");
 		free_page((unsigned long) pname);
 		return 0;
 	}
 
-	pr_devel("SELinux: trap: compare rule '%s' with pname_pgl '%s'\n",
+	trap_devel_log("SELinux: trap: compare rule '%s' with pname_pgl '%s'\n",
 		rule, pname);
 
-	rc = cmp_string(rule, current->comm, strlen(current->comm));
+	rc = cmp_string(rule, pname, strlen(pname));
 	if (rc)
-		pr_devel("SELinux: trap: different\n");
+		trap_devel_log("SELinux: trap: different\n");
 	else
-		pr_devel("SELinux: trap: identical\n");
+		trap_devel_log("SELinux: trap: identical\n");
 
 	free_page((unsigned long) pname);
 	return rc;
@@ -344,7 +349,12 @@ static int cmp_path(char *rule, struct common_audit_data *ad)
 	char *path_str, *pathname;
 
 	if (!rule) {
-		pr_devel("SELinux: trap: no rule for path\n");
+		trap_devel_log("SELinux: trap: no rule for path\n");
+		return 0;
+	}
+
+	if (ad->type != LSM_AUDIT_DATA_PATH) {
+		trap_devel_log("SELinux: trap: not support for path\n");
 		return 0;
 	}
 
@@ -362,15 +372,15 @@ static int cmp_path(char *rule, struct common_audit_data *ad)
 		return 0;
 	}
 
-	pr_devel("SELinux: trap: compare rule '%s' with path '%s'\n",
+	trap_devel_log("SELinux: trap: compare rule '%s' with path '%s'\n",
 		rule, path_str);
 
 	rc = cmp_string(rule, path_str, strlen(path_str));
 
 	if (rc)
-		pr_devel("SELinux: trap: different\n");
+		trap_devel_log("SELinux: trap: different\n");
 	else
-		pr_devel("SELinux: trap: identical\n");
+		trap_devel_log("SELinux: trap: identical\n");
 
         kfree(pathname);
 	pathname = NULL;
@@ -381,22 +391,29 @@ static int cmp_path(char *rule, struct common_audit_data *ad)
 static int cmp_name(char *rule, struct common_audit_data *ad)
 {
 	int rc;
-	const char *name = ad->u.dentry->d_name.name;
+	const char *name;
 
 	if (!rule) {
-		pr_devel("SELinux: trap: no rule for name\n");
+		trap_devel_log("SELinux: trap: no rule for name\n");
 		return 0;
 	}
 
-	pr_devel("SELinux: trap: compare rule '%s' with path '%s'\n",
+	if (ad->type != LSM_AUDIT_DATA_DENTRY) {
+		trap_devel_log("SELinux: trap: not support for name\n");
+		return 0;
+	}
+
+	name = ad->u.dentry->d_name.name;
+
+	trap_devel_log("SELinux: trap: compare rule '%s' with name '%s'\n",
 		rule, name);
 
 	rc = cmp_string(rule, name, strlen(name));
 
 	if (rc)
-		pr_devel("SELinux: trap: different\n");
+		trap_devel_log("SELinux: trap: different\n");
 	else
-		pr_devel("SELinux: trap: identical\n");
+		trap_devel_log("SELinux: trap: identical\n");
 
 	return rc;
 }
@@ -414,7 +431,7 @@ static int cmp_action(char *rule, struct common_audit_data *ad)
 	char *token;
 
 	if (!rule) {
-		pr_devel("SELinux: trap: no rule for action\n");
+		trap_devel_log("SELinux: trap: no rule for action\n");
 		return 0;
 	}
 
@@ -428,7 +445,7 @@ static int cmp_action(char *rule, struct common_audit_data *ad)
 	}
 	strlcpy(temp, rule, strlen(rule)+1);
 
-	pr_devel("SELinux: trap: compare rule '%s' with action [",
+	trap_devel_log("SELinux: trap: compare rule '%s' with action [",
 		rule);
 
 	perms = secclass_map[tclass-1].perms;
@@ -437,20 +454,20 @@ static int cmp_action(char *rule, struct common_audit_data *ad)
 	perm = 1;
 	while (i < (sizeof(av) * 8)) {
 		if ((perm & av) && perms[i])
-			pr_devel("%s", perms[i]);
+			trap_devel_log("%s", perms[i]);
 		i++;
 		perm <<= 1;
 	}
-	pr_devel("]\n");
+	trap_devel_log("]\n");
 
 	while ((token = strsep(&temp, " ")) != NULL) {
 		int len = strlen(token);
 		if (len > 0) {
 			i = 0;
 			while (perms[i]) {
-				pr_devel("compare %s - %s\n", token, perms[i]);
+				trap_devel_log("compare %s - %s\n", token, perms[i]);
 				if (!strcmp(token, perms[i])) {
-					pr_devel("match\n");
+					trap_devel_log("match\n");
 					av_rule |= (1 << i);
 					break;
 				}
@@ -460,14 +477,14 @@ static int cmp_action(char *rule, struct common_audit_data *ad)
 	}
 	kfree(temp);
 
-	pr_devel("av 0x%x\n", av);		/* audited value */
-	pr_devel("av_rule 0x%x\n", av_rule);	/* result: string matched position */
+	trap_devel_log("av 0x%x\n", av);		/* audited value */
+	trap_devel_log("av_rule 0x%x\n", av_rule);	/* result: string matched position */
 
 	rc = av & ~av_rule;
 	if (rc)
-		pr_devel("SELinux: trap: different\n");
+		trap_devel_log("SELinux: trap: different\n");
 	else
-		pr_devel("SELinux: trap: identical\n");
+		trap_devel_log("SELinux: trap: identical\n");
 
 	return rc;
 }
@@ -573,18 +590,16 @@ out:
 	return ret;
 }
 
-static void task_killer(struct work_struct *param)
+static void task_killer(struct task_struct *task)
 {
 	int ret;
 	struct siginfo info;
-	struct _trapwork *work = (struct _trapwork *)param;
 
 	memset(&info, 0, sizeof(struct siginfo));
 	info.si_signo = SIGABRT;
 	info.si_code = SI_KERNEL;
-	pr_info("SELinux: trap: send signal to pid:%d.\n",
-		work->task->pid);
-	ret = send_sig_info(SIGABRT, &info, work->task);
+	pr_info("SELinux: trap: send signal to pid:%d.\n", task->pid);
+	ret = send_sig_info(SIGABRT, &info, task);
 	if (ret < 0)
 		pr_err("SELinux: trap: send_sig_info failed\n");
 }
@@ -633,9 +648,9 @@ static void dump_common_audit_data_part(struct common_audit_data *ad, char type,
 		break;
 	case STRING_LSM_AUDIT_DATA_PATH: {
 		struct inode *inode;
-
+		if (ad->type != LSM_AUDIT_DATA_PATH)
+			break;
 		snprintf(&string_work[strlen(string_work)], STRING_PART_LEN_MAX-strlen(string_work), " path=%s", ad->u.path.dentry->d_iname);
-
 		inode = ad->u.path.dentry->d_inode;
 		if (inode) {
 			snprintf(&string_work[strlen(string_work)], STRING_PART_LEN_MAX-strlen(string_work), " dev=\"%s\"", inode->i_sb->s_id);
@@ -645,9 +660,9 @@ static void dump_common_audit_data_part(struct common_audit_data *ad, char type,
 	}
 	case STRING_LSM_AUDIT_DATA_DENTRY: {
 		struct inode *inode;
-
+		if (ad->type != LSM_AUDIT_DATA_DENTRY)
+			break;
 		snprintf(string_work, STRING_PART_LEN_MAX, " name=%s", ad->u.dentry->d_name.name);
-
 		inode = ad->u.dentry->d_inode;
 		if (inode) {
 			snprintf(&string_work[strlen(string_work)], STRING_PART_LEN_MAX-strlen(string_work), " dev=\"%s\"", inode->i_sb->s_id);
@@ -683,7 +698,6 @@ static void dump_common_audit_data_part(struct common_audit_data *ad, char type,
 		char *scontext;
 		u32 scontext_len;
 		u32 ssid = ad->selinux_audit_data->slad->ssid;
-
 		rc = security_sid_to_context(ssid, &scontext, &scontext_len);
 		if (rc) {
 			break;
@@ -697,7 +711,6 @@ static void dump_common_audit_data_part(struct common_audit_data *ad, char type,
 		char *tcontext;
 		u32 tcontext_len;
 		u32 tsid = ad->selinux_audit_data->slad->tsid;
-
 		rc = security_sid_to_context(tsid, &tcontext, &tcontext_len);
 		if (rc) {
 			break;
@@ -778,9 +791,6 @@ static void trapped_node_update(struct common_audit_data *ad)
 
 void trap_selinux_error(struct common_audit_data *ad)
 {
-	int ret;
-	struct _trapwork *work;
-
 	if (!selinux_trap_enable)
 		return;
 
@@ -789,45 +799,32 @@ void trap_selinux_error(struct common_audit_data *ad)
 		BUG();
 		return;
 	}
-	/* test */
-	/* pr_err("SELinux: trap: test start"); */
-	/* trapped_node_update(ad); */
-	/* pr_err("SELinux: trap: test end"); */
 
 	/* black list and white list check */
 	if (mask_trap(ad)) {
 		/* Ignore error type( No problem ) */
-		pr_err("SELinux: trap: Ignore SELinux error\n");
+		if (selinux_trap_debug >= TRAP_LOGLEVEL_NORMAL) {
+			pr_info("SELinux: trap: Ignore SELinux violation(pid = %d).\n", ((struct task_struct *)current)->pid);
+		}
 		return;
 	}
 
 	/* trapped Update & kmeg */
 	trapped_node_update(ad);
 
-	/* Violation( process Abort ) */
-	work = kmalloc(sizeof(struct _trapwork), GFP_KERNEL);
-	if (work) {
-		INIT_WORK((struct work_struct *)work, task_killer);
-		work->task = current;
-		ret = schedule_work((struct work_struct *)work);
-		if (!ret)
-			pr_err("SELinux: trap: schedule_work failed\n");
+	/* show current call stack of kernel layer */
+	pr_info("SELinux: trap: show stack.\n");
+	show_stack(NULL, NULL);
 
-		pr_info("SELinux: trap: block process.\n");
-		flush_work((struct work_struct *)work);
-		pr_info("SELinux: trap: show stack.\n");
-		show_stack(work->task, NULL);
-		pr_info("SELinux: trap: process came back.\n");
-	} else {
-		pr_err("SELinux: trap: kmalloc() failed\n");
-	}
-	kfree((void *)work);
+	/* sending SIGABRT to myself */
+	task_killer(current);
 }
 
 static int selinux_trap_init(void)
 {
 	int ret = 0;
-	pr_devel("SELinux: trap: Init module\n");
+	selinux_trap_debug = TRAP_LOGLEVEL_NORMAL;
+	trap_devel_log("SELinux: trap: Init module\n");
 	sema_init(&selinux_trap_list_sem, 1);
 	INIT_LIST_HEAD(&selinux_trap_list_head.list);
 	INIT_LIST_HEAD(&selinux_trap_process_list_head.list);
@@ -836,7 +833,7 @@ static int selinux_trap_init(void)
 
 static void selinux_trap_exit(void)
 {
-	pr_devel("SELinux: trap: Exit module\n");
+	trap_devel_log("SELinux: trap: Exit module\n");
 }
 
 module_init(selinux_trap_init);

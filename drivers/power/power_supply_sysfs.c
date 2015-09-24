@@ -5,7 +5,7 @@
  *  Copyright © 2007  Anton Vorontsov <cbou@mail.ru>
  *  Copyright © 2004  Szabolcs Gyurko
  *  Copyright © 2003  Ian Molton <spyro@f2s.com>
- *  Copyright (C) 2013-2014 Sony Mobile Communications AB.
+ *  Copyright (c) 2013 Sony Mobile Communications Inc.
  *
  *  Modified: 2004, Oct     Szabolcs Gyurko
  *
@@ -192,6 +192,8 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(batt_aging),
 	POWER_SUPPLY_ATTR(enable_llk),
 	POWER_SUPPLY_ATTR(soc_update_request),
+	POWER_SUPPLY_ATTR(llk_socmax),
+	POWER_SUPPLY_ATTR(llk_socmin),
 	/* Properties of type `const char *' */
 	POWER_SUPPLY_ATTR(model_name),
 	POWER_SUPPLY_ATTR(manufacturer),

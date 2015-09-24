@@ -1507,7 +1507,7 @@ static int msm_spi_bam_map_buffers(struct msm_spi *dd)
 	u32 tx_len, rx_len;
 	int num_xfrs_grped = dd->num_xfrs_grped;
 
-	dev = &dd->cur_msg->spi->dev;
+	dev = dd->dev;
 	first_xfr = dd->cur_transfer;
 
 	do {
@@ -1517,7 +1517,7 @@ static int msm_spi_bam_map_buffers(struct msm_spi *dd)
 		if (tx_buf != NULL) {
 			first_xfr->tx_dma = dma_map_single(dev, tx_buf,
 							tx_len, DMA_TO_DEVICE);
-			if (dma_mapping_error(NULL, first_xfr->tx_dma)) {
+			if (dma_mapping_error(dev, first_xfr->tx_dma)) {
 				ret = -ENOMEM;
 				goto error;
 			}
@@ -1526,9 +1526,9 @@ static int msm_spi_bam_map_buffers(struct msm_spi *dd)
 		if (rx_buf != NULL) {
 			first_xfr->rx_dma = dma_map_single(dev, rx_buf,	rx_len,
 							DMA_FROM_DEVICE);
-			if (dma_mapping_error(NULL, first_xfr->rx_dma)) {
+			if (dma_mapping_error(dev, first_xfr->rx_dma)) {
 				if (tx_buf != NULL)
-					dma_unmap_single(NULL,
+					dma_unmap_single(dev,
 							first_xfr->tx_dma,
 							tx_len, DMA_TO_DEVICE);
 				ret = -ENOMEM;
@@ -1833,6 +1833,7 @@ static void msm_spi_process_transfer(struct msm_spi *dd)
 	u32 timeout;
 	u32 spi_ioc;
 	u32 int_loopback = 0;
+	int ret;
 
 	dd->tx_bytes_remaining = dd->cur_msg_len;
 	dd->rx_bytes_remaining = dd->cur_msg_len;
@@ -1885,10 +1886,12 @@ static void msm_spi_process_transfer(struct msm_spi *dd)
 	msm_spi_set_transfer_mode(dd, bpw, read_count);
 	msm_spi_set_mx_counts(dd, read_count);
 	if (dd->mode == SPI_DMOV_MODE) {
-		if (msm_spi_dma_map_buffers(dd) < 0) {
+		ret = msm_spi_dma_map_buffers(dd);
+		if (ret < 0) {
 			pr_err("Mapping DMA buffers\n");
+			dd->cur_msg->status = ret;
 			return;
-			}
+		}
 	} else if (dd->mode == SPI_BAM_MODE) {
 			if (msm_spi_dma_map_buffers(dd) < 0) {
 				pr_err("Mapping DMA buffers\n");
@@ -2029,8 +2032,6 @@ static inline void write_force_cs(struct msm_spi *dd, bool set_flag)
 
 static inline int combine_transfers(struct msm_spi *dd)
 {
-	struct spi_transfer *t = dd->cur_transfer;
-	struct spi_transfer *nxt;
 	int xfrs_grped = 1;
 	dd->xfrs_delay_usec = 0;
 
@@ -2043,30 +2044,7 @@ static inline int combine_transfers(struct msm_spi *dd)
 	if (dd->cur_transfer->rx_buf)
 		dd->bam.bam_rx_len += dd->cur_transfer->len;
 
-	while (t->transfer_list.next != &dd->cur_msg->transfers) {
-		nxt = list_entry(t->transfer_list.next,
-				 struct spi_transfer,
-				 transfer_list);
-		if (t->cs_change != nxt->cs_change)
-			return xfrs_grped;
-		if (t->delay_usecs) {
-			dd->xfrs_delay_usec = t->delay_usecs;
-			dev_info(dd->dev, "SPI slave requests delay per txn :%d usecs",
-					t->delay_usecs);
-			return xfrs_grped;
-		}
-		if (nxt->tx_buf)
-			dd->bam.bam_tx_len += nxt->len;
-		if (nxt->rx_buf)
-			dd->bam.bam_rx_len += nxt->len;
-
-		dd->cur_msg_len += nxt->len;
-		xfrs_grped++;
-		t = nxt;
-	}
-
-	if (1 == xfrs_grped)
-		dd->xfrs_delay_usec = dd->cur_transfer->delay_usecs;
+	dd->xfrs_delay_usec = dd->cur_transfer->delay_usecs;
 
 	return xfrs_grped;
 }
@@ -2116,7 +2094,7 @@ static void msm_spi_process_message(struct msm_spi *dd)
 			dd->cur_tx_transfer = dd->cur_transfer;
 			dd->cur_rx_transfer = dd->cur_transfer;
 			msm_spi_process_transfer(dd);
-			if (dd->qup_ver && !dd->xfrs_delay_usec)
+			if (dd->qup_ver && dd->cur_transfer->cs_change)
 				write_force_cs(dd, 0);
 			xfrs_grped--;
 		}
@@ -2140,7 +2118,8 @@ static void msm_spi_process_message(struct msm_spi *dd)
 		dd->num_xfrs_grped = 1;
 		msm_spi_process_transfer(dd);
 	}
-
+	if (dd->qup_ver)
+		write_force_cs(dd, 0);
 	return;
 
 error:
@@ -2233,7 +2212,7 @@ static int msm_spi_transfer_one_message(struct spi_master *master,
 out:
 	dd->cur_msg->status = status_error;
 	spi_finalize_current_message(master);
-	return 0;
+	return status_error;
 }
 
 static int msm_spi_prepare_transfer_hardware(struct spi_master *master)
