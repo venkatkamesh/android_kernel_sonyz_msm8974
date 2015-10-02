@@ -44,4 +44,3 @@ static inline bool quickwakeup_suspend_again(void) { return 0; };
 #endif /* __KERNEL__ */
 
 #endif /* _QUICKWAKEUP_H_ */
-

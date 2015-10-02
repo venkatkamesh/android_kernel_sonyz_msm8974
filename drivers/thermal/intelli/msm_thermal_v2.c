@@ -207,9 +207,9 @@ enum ocr_request {
 #define PSM_REG_MODE_FROM_ATTRIBS(attr) \
 	(container_of(attr, struct psm_rail, mode_attr));
 
-#define DEFAULT_POLLING_MS	250
-/* last 3 minutes based on 250ms polling cycle */
-#define MAX_HISTORY_SZ		((3*60*1000) / DEFAULT_POLLING_MS)
+#define DEFAULT_POLLING_MS	500
+/* last 5 minutes based on 500ms polling cycle */
+#define MAX_HISTORY_SZ		((5*60*1000) / DEFAULT_POLLING_MS)
 
 struct msm_thermal_stat_data {
 	int32_t temp_history[MAX_HISTORY_SZ];
@@ -1626,7 +1626,7 @@ static ssize_t __ref store_cc_enabled(struct kobject *kobj,
 		struct kobj_attribute *attr, const char *buf, size_t count)
 {
 	int ret = 0;
-	int val = 0;
+	int val = 1;
 
 	ret = kstrtoint(buf, 10, &val);
 	if (ret) {
@@ -1948,7 +1948,7 @@ int __devinit msm_thermal_init(struct msm_thermal_data *pdata)
 	disable_msm_thermal();
 	hotplug_init();
 	freq_mitigation_init();
-	enabled = 0;
+	enabled = 1;
 
 	return ret;
 }

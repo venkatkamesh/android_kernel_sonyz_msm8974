@@ -110,6 +110,7 @@ struct kimage {
 #define KEXEC_TYPE_DEFAULT 0
 #define KEXEC_TYPE_CRASH   1
 	unsigned int preserve_context : 1;
+
 #ifdef CONFIG_KEXEC_HARDBOOT
 	unsigned int hardboot : 1;
 #endif
@@ -205,13 +206,13 @@ extern struct kimage *kexec_crash_image;
 
 /* List of defined/legal kexec flags */
 #if defined(CONFIG_KEXEC_JUMP) && defined(CONFIG_KEXEC_HARDBOOT)
-#define KEXEC_FLAGS (KEXEC_ON_CRASH | KEXEC_PRESERVE_CONTEXT | KEXEC_HARDBOOT)
+#define KEXEC_FLAGS    (KEXEC_ON_CRASH | KEXEC_PRESERVE_CONTEXT | KEXEC_HARDBOOT)
 #elif defined(CONFIG_KEXEC_JUMP)
 #define KEXEC_FLAGS    (KEXEC_ON_CRASH | KEXEC_PRESERVE_CONTEXT)
 #elif defined(CONFIG_KEXEC_HARDBOOT)
-#define KEXEC_FLAGS (KEXEC_ON_CRASH | KEXEC_HARDBOOT)
+#define KEXEC_FLAGS    (KEXEC_ON_CRASH | KEXEC_HARDBOOT)
 #else
-#define KEXEC_FLAGS (KEXEC_ON_CRASH)
+#define KEXEC_FLAGS    (KEXEC_ON_CRASH)
 #endif
 
 #define VMCOREINFO_BYTES           (4096)

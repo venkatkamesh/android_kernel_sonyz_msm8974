@@ -97,9 +97,14 @@ static struct devfreq_msm_adreno_tz_data adreno_tz_data = {
 	.device_id = KGSL_DEVICE_3D0,
 };
 
+static struct devfreq_msm_adreno_tz_data adreno_conservative_data = {
+	.device_id = KGSL_DEVICE_3D0,
+};
+
 static const struct devfreq_governor_data adreno_governors[] = {
 	{ .name = "simple_ondemand", .data = &adreno_ondemand_data },
 	{ .name = "msm-adreno-tz", .data = &adreno_tz_data },
+	{ .name = "conservative", .data = &adreno_conservative_data },
 };
 
 static const struct kgsl_functable adreno_functable;
@@ -2145,7 +2150,7 @@ error_clk_off:
  * @priority:  Boolean flag to specify of the start should be scheduled in a low
  * latency work queue
  *
- * Power up the GPU and initialize it.  If priority is specified then elevate
+ * Power up the GPU and initialize it. If priority is specified then elevate
  * the thread priority for the duration of the start operation
  */
 static int adreno_start(struct kgsl_device *device, int priority)

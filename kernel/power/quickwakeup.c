@@ -102,4 +102,3 @@ bool quickwakeup_suspend_again(void)
 
 	return ret;
 }
-

@@ -179,6 +179,7 @@ config ARCH_MSM8960
 	select MSM_USE_USER_ACCESSIBLE_TIMERS
 	select MSM_CPU_PWRCTL
 	select MSM_LPM_TEST
+	select HAS_MACH_MEMUTILS
 
 config ARCH_MSM8930
 	bool "MSM8930"
@@ -531,6 +532,7 @@ config ARCH_MSM8226
 	select MSM_RPM_STATS_LOG
 	select ARCH_WANT_KMAP_ATOMIC_FLUSH
 	select ENABLE_VMALLOC_SAVINGS
+	select HAS_MACH_MEMUTILS
 
 config ARCH_MSMSAMARIUM
 	bool "MSMSAMARIUM"
@@ -590,7 +592,8 @@ config  ARCH_MSM_SCORPION
 config  ARCH_MSM_KRAIT
 	bool
 	select ARM_L1_CACHE_SHIFT_6
-	select DEVFREQ_GOV_MSM_CPUBW_HWMON
+	select DEVFREQ_GOV_MSM_BW_HWMON
+	select DEVFREQ_GOV_MSM_CACHE_HWMON
 
 config  MSM_CORTEX_A7
 	bool
@@ -1905,6 +1908,18 @@ config MSM_MPDEC
 	  This enables kernel based multi core control.
 	  (up/down hotplug based on load)
 
+config FAST_HOTPLUG
+	bool "Enable fast hotplug"
+	default n
+	help
+	  Kernel based core control.
+
+config ALUCARD_HOTPLUG
+	bool "Enable alucard-hotplug cpu hotplug driver"
+	default y
+	help
+	  Generic Alucard-hotplug cpu hotplug driver for ARM SOCs
+
 if CPU_FREQ_MSM
 
 config MSM_CPU_FREQ_SET_MIN_MAX
@@ -1936,10 +1951,10 @@ config MSM_CPUFREQ_LIMITER
 	  If in doubt, say N.
 
 config CPU_OC
-	bool "allow 2.3 GHz OC bin"
+	bool "allow 2.419 GHz OC bin"
 	default n
 	help
-	  Unlock the CPU Overclock freq speed @ 2.3 GHz
+	  Unlock the CPU Overclock freq speed @ 2.419 GHz
 
 config OC_ULTIMATE
 	bool "allow 2.419 GHz max OC option"
@@ -1972,11 +1987,50 @@ config TURBO_BOOST
 	  than stock maximum.  When more than 2 cores are active, the clock
 	  is limited to stock max speeds
 
+config INTELLI_PLUG
+	bool "Enable intelli-plug cpu hotplug driver"
+	default n
+	help
+	  Generic Intelli-plug cpu hotplug driver for ARM SOCs
+
 config CPU_VOLTAGE_TABLE
 	bool "Enable CPU Voltage Table via sysfs for adjustements"
 	default n
 	help
 	  DTS based kernel User Votlage Control
+
+config ZEN_DECISION
+	bool "Zen Decision: MSM Userspace Handler"
+	depends on SMP && FB
+	default n
+	help
+	  MSM/Qcomm devices have multiple userspace applications that handle
+	  CPU hotplugging and frequency operations.
+
+	  ZenDecision is a "handler" to account for behavior caused by
+	  disabling some of these services.
+
+	  For example, If MPDecision is disabled and MSM-Thermal_Engine is 
+	  enabled in the userspace. Situations where CPUs go offline but never
+	  come back online occur. ZenDecision handles the situation of CPUs
+	  never coming online when they are supposed.
+  
+	  ZenDecision ensures all CPUs are online when they are supposed to be by:
+	  - Enable all CPUs when screen comes on after wake_wait_delay
+	  - Ignore all CPU_UP operations when battery level is <= 15% to respect
+	    decisions of MSMThermal.
+
+	  Userspace tunables for ZenDecision (/sys/kernel/zen_decision):
+	  - enabled (0 or 1): Enable or disable the driver.
+	  - wake_wait_time (0-60000): How long to wait before executing CPU_UP work.
+	  - bat_threshold_ignore (0-100, 0=disabled): Don't do any CPU_UP work up to
+	     this battery charge level.
+
+	  WARNING: ZenDecision is not a direct replacement for any of the MSM userspace
+	  services. It is simply designed to "handle" specific behaviors that are caused
+	  by disabling these services.
+
+	  If unsure, say N.
 
 config MSM_AVS_HW
 	bool "Enable Adaptive Voltage Scaling (AVS)"
@@ -3159,18 +3213,6 @@ config FORCE_FAST_CHARGE
 	  A simple sysfs interface to force adapters that
 	  are detected as USB to charge as AC.
 
-config MSM_SLEEPER
-	bool "Limit max frequency while screen is off"
-	default y
-	help
-	  Limit max frequency while screen is off 
-
-config HAS_MACH_MEMUTILS
-	default n
-	bool "Motorola MSM memcpy enhancements"
-	help
-	Faster memcpy performance for Krait
-
 config KRAIT_REGULATOR
 	bool "Support Kraits powered via ganged regulators in the pmic"
 	help
@@ -3186,6 +3228,13 @@ config MSM_MODEM_SUBSYSTEM_RESTART_MONITOR
 	help
 	  This option enables a module which can notify user-space
 	  applications of modem subsystem power up/down event via uevent.
+
+config HAS_MACH_MEMUTILS
+	default n
+	bool "Motorola MSM memcpy enhancements"
+	help
+	Faster memcpy performance for Krait
+
 endif
 
 config KERNEL_TEXT_MPU_PROT

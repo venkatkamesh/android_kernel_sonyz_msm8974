@@ -384,6 +384,7 @@ static void msm_kexec_hardboot_hook(void)
 #endif
 }
 #endif
+
 static int __init msm_restart_init(void)
 {
 #ifdef CONFIG_MSM_DLOAD_MODE
@@ -402,7 +403,7 @@ static int __init msm_restart_init(void)
 		scm_pmic_arbiter_disable_supported = true;
 
 #ifdef CONFIG_KEXEC_HARDBOOT
-	 kexec_hardboot_hook = msm_kexec_hardboot_hook;
+	kexec_hardboot_hook = msm_kexec_hardboot_hook;
 #endif
 
 	return 0;

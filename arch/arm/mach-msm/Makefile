@@ -385,6 +385,8 @@ else
 obj-$(CONFIG_MSM_DCVS) += msm_mpdecision_qcom.o
 endif
 
+obj-$(CONFIG_FAST_HOTPLUG) += fast_hotplug.o
+
 obj-$(CONFIG_MSM_RUN_QUEUE_STATS) += msm_rq_stats.o
 obj-$(CONFIG_MSM_SHOW_RESUME_IRQ) += msm_show_resume_irq.o
 obj-$(CONFIG_BT_MSM_PINTEST)  += btpintest.o
@@ -440,20 +442,20 @@ obj-$(CONFIG_MSM_DEVFREQ_CPUBW) += devfreq_cpubw.o
 
 obj-$(CONFIG_WALL_CLK) += wallclk.o
 obj-$(CONFIG_WALL_CLK_SYSFS) += wallclk_sysfs.o
-obj-$(CONFIG_MSM_CPUFREQ_LIMITER) += cpufreq_limit.o
-obj-$(CONFIG_FORCE_FAST_CHARGE) += fastchg.o
-obj-$(CONFIG_TURBO_BOOST) += msm_turbo.o
-obj-$(CONFIG_MSM_SLEEPER) += msm-sleeper.o
-
-
 obj-$(CONFIG_HAS_MACH_MEMUTILS) += memutils/
-
+obj-$(CONFIG_FORCE_FAST_CHARGE) += fastchg.o
 obj-$(CONFIG_ARCH_RANDOM) += early_random.o
 obj-$(CONFIG_PERFMAP) += perfmap.o
+obj-$(CONFIG_MSM_CPUFREQ_LIMITER) += cpufreq_limit.o
+obj-$(CONFIG_TURBO_BOOST) += msm_turbo.o
+
 obj-$(CONFIG_RAMDUMP_TAGS) += board-rdtags.o
 CFLAGS_board-rdtags.o  := \
 	-D"INFO_PRODUCT=\"$(if $(TARGET_PRODUCT),$(TARGET_PRODUCT),unknown)\"" \
 	-D"INFO_VARIANT= \
 	\"$(if $(TARGET_BUILD_VARIANT),$(TARGET_BUILD_VARIANT),unknown)\"" \
 	-D"INFO_BUILDID=\"$(if $(SEMC_SYSTEM_VERSION),$(SEMC_SYSTEM_VERSION),private)\""
+
 CFLAGS_board-8974-console.o += -Idrivers/staging/android
+obj-$(CONFIG_ALUCARD_HOTPLUG) += alucard_hotplug.o
+obj-$(CONFIG_ZEN_DECISION) += msm_zen_decision.o

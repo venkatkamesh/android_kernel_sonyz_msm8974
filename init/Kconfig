@@ -619,14 +619,6 @@ config CGROUP_FREEZER
 	  Provides a way to freeze and unfreeze all tasks in a
 	  cgroup.
 
-config CGROUP_TIMER_SLACK
-	bool "Timer slack cgroup controller"
-	help
-	Provides a way to set minimal timer slack value for tasks in
-	a cgroup.
-	It's useful in mobile devices where certain background apps
-	are attached to a cgroup and combined wakeups are desired.
-
 config CGROUP_DEVICE
 	bool "Device controller for cgroups"
 	help
@@ -1156,9 +1148,8 @@ config AIO
 	default y
 	help
 	  This option enables POSIX asynchronous I/O which may by used
-          by some high performance threaded applications. Disabling
-          this option saves about 7k.
-
+	  by some high performance threaded applications. Disabling
+	  this option saves about 7k.
 
 config AIO_SSD_ONLY
 	bool "Tune AIO performance for SSDs" if EXPERT
@@ -1184,7 +1175,6 @@ config PCI_QUIRKS
 	  This enables workarounds for various PCI chipset
 	  bugs/quirks. Disable this only if your target machine is
 	  unaffected by PCI quirks.
-
 
 config EMBEDDED
 	bool "Embedded system"

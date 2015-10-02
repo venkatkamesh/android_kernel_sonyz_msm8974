@@ -25,6 +25,7 @@
 #include <linux/qpnp/pwm.h>
 #include <linux/err.h>
 #include <linux/regulator/consumer.h>
+#include <linux/mdss_dsi_panel.h>
 
 #ifdef CONFIG_POWERSUSPEND
 #include <linux/powersuspend.h>
@@ -86,6 +87,11 @@ static int mdss_dsi_panel_pcc_setup(struct mdss_panel_data *pdata);
 static void vsync_handler(struct mdss_mdp_ctl *ctl, ktime_t t);
 
 struct mdss_mdp_vsync_handler vs_handle;
+
+bool mdss_panel_is_on(void)
+{
+	return display_onoff_state;
+}
 
 /* pcc data infomation */
 #define PANEL_SKIP_ID			0xff
@@ -1028,7 +1034,7 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	}
 
 #ifdef CONFIG_POWERSUSPEND
-	set_power_suspend_state_pannel_hook(POWER_SUSPEND_INACTIVE);
+	set_power_suspend_state_panel_hook(POWER_SUSPEND_INACTIVE);
 #endif
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
@@ -1158,15 +1164,15 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 		spec_pdata->cabc_active = 0;
 	}
 
-#ifdef CONFIG_POWERSUSPEND
-	set_power_suspend_state_pannel_hook(POWER_SUSPEND_ACTIVE);
-#endif
-
 	if ((spec_pdata->new_vfp) &&
 		(ctrl_pdata->panel_data.panel_info.lcdc.v_front_porch !=
 			spec_pdata->new_vfp))
 		ctrl_pdata->panel_data.panel_info.lcdc.v_front_porch =
 			spec_pdata->new_vfp;
+
+#ifdef CONFIG_POWERSUSPEND
+	set_power_suspend_state_panel_hook(POWER_SUSPEND_ACTIVE);
+#endif
 
 	vs_handle.vsync_handler = (mdp_vsync_handler_t)vsync_handler;
 	vs_handle.cmd_post_flush = false;

@@ -626,7 +626,7 @@ Protocol:	2.08+
   (magic number 5D 00), XZ (magic number FD 37), and LZ4 (magic number
   02 21).  The uncompressed payload is currently always ELF (magic
   number 7F 45 4C 46).
-  
+
 Field name:	payload_length
 Type:		read
 Offset/size:	0x24c/4

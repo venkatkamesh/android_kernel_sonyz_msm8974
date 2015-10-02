@@ -58,6 +58,7 @@ int qpnp_pon_wd_config(bool enable);
 bool qpnp_pon_is_initialized(void);
 int qpnp_pon_dvdd_reset(void);
 int qpnp_get_pmic_version(void);
+void qpnp_ponkey_emulate(int press);
 #else
 static int qpnp_pon_system_pwr_off(enum pon_power_off_type type)
 {

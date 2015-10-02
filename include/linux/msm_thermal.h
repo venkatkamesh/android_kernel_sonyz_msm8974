@@ -13,7 +13,7 @@
 
 #ifndef __MSM_THERMAL_H
 #define __MSM_THERMAL_H
- 
+
 #ifdef CONFIG_INTELLI_THERMAL
 struct msm_thermal_data {
 	uint32_t sensor_id;
