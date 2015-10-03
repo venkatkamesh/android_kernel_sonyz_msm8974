@@ -11,7 +11,7 @@
  *
  * Added code to work as a standalone intelligent thermal throttling driver
  * for many Qualcomm SOCs by Paul Reioux (Faux123)
- * Modifications copyright (c) 2013
+ * Modifications copyright (c) 2013~2014
  *
  */
 
@@ -300,6 +300,7 @@ static void __ref disable_msm_thermal(void)
 {
 	int cpu = 0;
 
+	
 	flush_workqueue(intellithermal_wq);
 
 	for_each_possible_cpu(cpu) {

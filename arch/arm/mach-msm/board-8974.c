@@ -57,8 +57,8 @@
 #ifdef CONFIG_RAMDUMP_TAGS
 #include "board-rdtags.h"
 #endif
-#include "board-8974-console.h"
 
+#include "board-8974-console.h"
 
 static struct memtype_reserve msm8974_reserve_table[] __initdata = {
 	[MEMTYPE_SMI] = {
@@ -216,7 +216,6 @@ void __init msm_8974_reserve(void)
         phys_addr_t start;
 	struct membank* bank;
 #endif
-
 #if defined(CONFIG_RAMDUMP_TAGS) || defined(CONFIG_CRASH_LAST_LOGS)
 	reserve_debug_memory();
 #endif
@@ -225,7 +224,6 @@ void __init msm_8974_reserve(void)
 #endif
 	reserve_info = &msm8974_reserve_info;
 	of_scan_flat_dt(dt_scan_for_memory_reserve, msm8974_reserve_table);
-
 #ifdef CONFIG_KEXEC_HARDBOOT
         // Reserve space for hardboot page - just after ram_console,
         // at the start of second memory bank
@@ -243,6 +241,7 @@ void __init msm_8974_reserve(void)
         else
                 pr_err("Failed to reserve space for hardboot page at 0x%X!\n", start);
 #endif
+
 	msm_reserve();
 }
 
@@ -289,7 +288,7 @@ void __init msm8974_add_drivers(void)
 #ifdef CONFIG_INTELLI_THERMAL
 	msm_thermal_init(NULL);
 #else
-	msm_thermal_device_init();
+ 	msm_thermal_device_init();
 #endif
 
 }

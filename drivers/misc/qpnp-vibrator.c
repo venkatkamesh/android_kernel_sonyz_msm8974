@@ -20,6 +20,7 @@
 #include <linux/of_device.h>
 #include <linux/slab.h>
 #include <linux/spmi.h>
+#include <linux/kobject.h>
 
 #include <linux/qpnp/vibrator.h>
 #include "../staging/android/timed_output.h"
@@ -38,6 +39,8 @@
 #define QPNP_VIB_EN			BIT(7)
 #define QPNP_VIB_VTG_SET_MASK		0x1F
 #define QPNP_VIB_LOGIC_SHIFT		4
+
+static bool vibrator_enable = 1;
 
 struct qpnp_vib {
 	struct spmi_device *spmi;
@@ -180,6 +183,9 @@ static int qpnp_vib_set(struct qpnp_vib *vib, int on)
 {
 	int rc;
 	u8 val;
+
+	if (!vibrator_enable)
+		return 1;
 
 	if (on) {
 		val = vib->reg_vtg_ctl;
@@ -393,6 +399,78 @@ static void __exit qpnp_vibrator_exit(void)
 	return spmi_driver_unregister(&qpnp_vibrator_driver);
 }
 module_exit(qpnp_vibrator_exit);
+
+static ssize_t vtg_level_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	sprintf(buf, "%d\n", vib_dev->vtg_level);
+
+	return strlen(buf);
+}
+
+static ssize_t vtg_level_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int val;
+
+	if (sscanf(buf, "%u", &val)) {
+		if (val >= QPNP_VIB_MIN_LEVEL
+			&& val <= QPNP_VIB_MAX_LEVEL) {
+			vib_dev->vtg_level = val;
+		} else {
+			return -EINVAL;
+		}
+	}
+
+	return count;
+}
+static struct kobj_attribute vtg_level_interface = __ATTR(vtg_level, 0644, vtg_level_show, vtg_level_store);
+
+static ssize_t vibrator_enable_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	sprintf(buf, "%d\n", (int)vibrator_enable);
+
+	return strlen(buf);
+}
+
+static ssize_t vibrator_enable_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int val;
+
+	if (sscanf(buf, "%u", &val)) {
+		vibrator_enable = val;
+	}
+
+	return count;
+}
+static struct kobj_attribute vibrator_enable_interface = __ATTR(enable, 0644, vibrator_enable_show, vibrator_enable_store);
+
+static struct attribute *qpnp_vibrator_attrs[] = {
+	&vtg_level_interface.attr,
+	&vibrator_enable_interface.attr,
+	NULL,
+};
+
+static struct attribute_group qpnp_vibrator_interface_group = {
+	.attrs = qpnp_vibrator_attrs,
+};
+
+static struct kobject *qpnp_vibrator_kobject;
+
+static int __init qpnp_vibrator_sysfs_init(void)
+{
+	int ret;
+
+	qpnp_vibrator_kobject = kobject_create_and_add("qpnp-vibrator", kernel_kobj);
+	if (!qpnp_vibrator_kobject) {
+		pr_err("qpnp_vibrator: Failed to create kobject interface\n");
+	}
+	ret = sysfs_create_group(qpnp_vibrator_kobject, &qpnp_vibrator_interface_group);
+	if (ret) {
+		kobject_put(qpnp_vibrator_kobject);
+	}
+
+        return 0;
+}
+late_initcall(qpnp_vibrator_sysfs_init);
 
 MODULE_DESCRIPTION("qpnp vibrator driver");
 MODULE_LICENSE("GPL v2");

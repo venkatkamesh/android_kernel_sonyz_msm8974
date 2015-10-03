@@ -450,6 +450,7 @@ static ssize_t store_down_differential_multi_core(struct kobject *a,
 	return count;
 }
 
+
 static ssize_t store_block_inp_time(struct kobject *a, struct attribute *b,
 					const char *buf, size_t count)
 {
@@ -676,13 +677,12 @@ static ssize_t store_powersave_bias(struct kobject *a, struct attribute *b,
 
 				cpumask_set_cpu(cpu, &cpus_timer_done);
 				if (dbs_info->cur_policy) {
-					dbs_timer_exit(dbs_info);
 					/* restart dbs timer */
+					mutex_lock(&dbs_info->timer_mutex);
 					if (timer_pending(
 						&dbs_info->work.timer))
 						dbs_timer_exit(dbs_info);
 
-					mutex_lock(&dbs_info->timer_mutex);
 					dbs_timer_init(dbs_info);
 					/* Enable frequency synchronization
 					 * of CPUs */
@@ -1304,8 +1304,8 @@ bail_acq_sema_failed:
 *	This is only a dummy function, but needed to compile
 */
 static void cpufreq_ondemand_inp_filter_timer(unsigned long data)
-	{
-	}
+{
+}
 
 static void dbs_input_event(struct input_handle *handle, unsigned int type,
 		unsigned int code, int value)

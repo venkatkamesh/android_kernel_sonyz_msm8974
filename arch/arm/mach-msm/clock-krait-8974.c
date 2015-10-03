@@ -600,11 +600,6 @@ static void krait_update_uv(int *uv, int num, int boost_uv)
 	}
 }
 
-static char table_name[] = "qcom,speedXX-pvsXX-bin-vXX";
-module_param_string(table_name, table_name, sizeof(table_name), S_IRUGO);
-static unsigned int pvs_config_ver;
-module_param(pvs_config_ver, uint, S_IRUGO);
-
 #ifdef CONFIG_CPU_VOLTAGE_TABLE
 
 #define CPU_VDD_MIN	 600
@@ -671,11 +666,16 @@ ssize_t store_UV_mV_table(struct cpufreq_policy *policy, char *buf,
 		ret = sscanf(buf, "%s", size_cur);
 		buf += strlen(size_cur) + 1;
 	}
-	pr_warn("faux123: user voltage table modified!\n");
+	pr_info("krait: regulator: user voltage table modified!\n");
 
 	return count;
 }
 #endif
+
+static char table_name[] = "qcom,speedXX-pvsXX-bin-vXX";
+module_param_string(table_name, table_name, sizeof(table_name), S_IRUGO);
+static unsigned int pvs_config_ver;
+module_param(pvs_config_ver, uint, S_IRUGO);
 
 static int clock_krait_8974_driver_probe(struct platform_device *pdev)
 {

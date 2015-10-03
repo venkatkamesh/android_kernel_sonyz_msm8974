@@ -40,7 +40,7 @@ static atomic_t waiting_for_crash_ipi;
  */
 
 int machine_kexec_prepare(struct kimage *image)
-{	
+{
 	struct kexec_segment *current_segment;
 	__be32 header;
 	int i, err;

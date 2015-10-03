@@ -1490,6 +1490,11 @@ static int qpnp_rgb_set(struct qpnp_led_data *led)
 	return 0;
 }
 
+#define STOCK_BL_BR_MIN		288
+#define BL_HACK_BL_BR_MIN	88
+
+static unsigned int bl_hack_enabled = 1;
+
 static void qpnp_led_set(struct led_classdev *led_cdev,
 				enum led_brightness value)
 {
@@ -1503,6 +1508,15 @@ static void qpnp_led_set(struct led_classdev *led_cdev,
 
 	if (value > led->cdev.max_brightness)
 		value = led->cdev.max_brightness;
+
+	/*
+	 * Tommy-Geenexus: Backlight-brightness-hack.
+	 * When wled (backlight) brightness is lowered to the userspace minimum
+	 * value (STOCK_BL_BR_MIN), set it to BL_HACK_BL_BR_MIN
+	 * (to lessen eyestrain in dark environments).
+	 */
+	if (bl_hack_enabled && led->id == QPNP_ID_WLED && value == STOCK_BL_BR_MIN)
+		value = BL_HACK_BL_BR_MIN;
 
 	led->cdev.brightness = value;
 	if (led->in_order_command_processing)
@@ -1930,11 +1944,35 @@ exit:
 	return ret;
 }
 
+static ssize_t bl_hack_enabled_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%u\n", bl_hack_enabled);
+}
+
+static ssize_t bl_hack_enabled_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long val;
+
+	ret = kstrtoul(buf, 10, &val);
+
+	if (ret || val > 1)
+		return -EINVAL;
+
+	bl_hack_enabled = val;
+
+	return count;
+}
+
 static struct device_attribute wled_attrs[] = {
 	__ATTR(cabc, S_IRUGO|S_IWUSR|S_IWGRP,
 		qpnp_wled_cabc_show, qpnp_wled_cabc_store),
 	__ATTR(max_current, S_IRUGO|S_IWUSR|S_IWGRP,
 		qpnp_wled_max_curr_show, qpnp_wled_max_curr_store),
+	__ATTR(bl_hack, S_IRUGO|S_IWUSR,
+		bl_hack_enabled_show, bl_hack_enabled_store),
 	__ATTR_NULL,
 };
 
