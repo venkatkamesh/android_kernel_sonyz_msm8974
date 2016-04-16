@@ -17,106 +17,10 @@
 #include <linux/percpu.h>
 #include <linux/node.h>
 #include <linux/nodemask.h>
-#include <linux/of.h>
 #include <linux/sched.h>
-#include <linux/slab.h>
 
 #include <asm/cputype.h>
 #include <asm/topology.h>
-
-/*
- * cpu power scale management
- */
-
-/*
- * cpu power table
- * This per cpu data structure describes the relative capacity of each core.
- * On a heteregenous system, cores don't have the same computation capacity
- * and we reflect that difference in the cpu_power field so the scheduler can
- * take this difference into account during load balance. A per cpu structure
- * is preferred because each CPU updates its own cpu_power field during the
- * load balance except for idle cores. One idle core is selected to run the
- * rebalance_domains for all idle cores and the cpu_power can be updated
- * during this sequence.
- */
-static DEFINE_PER_CPU(unsigned long, cpu_scale);
-
-unsigned long arch_scale_freq_power(struct sched_domain *sd, int cpu)
-{
-	return per_cpu(cpu_scale, cpu);
-}
-
-static void set_power_scale(unsigned int cpu, unsigned long power)
-{
-	per_cpu(cpu_scale, cpu) = power;
-}
-
-#ifdef CONFIG_OF
-struct cpu_efficiency {
-	const char *compatible;
-	unsigned long efficiency;
-};
-
-/*
- * Table of relative efficiency of each processors
- * The efficiency value must fit in 20bit and the final
- * cpu_scale value must be in the range
- *   0 < cpu_scale < 3*SCHED_POWER_SCALE/2
- * in order to return at most 1 when DIV_ROUND_CLOSEST
- * is used to compute the capacity of a CPU.
- * Processors that are not defined in the table,
- * use the default SCHED_POWER_SCALE value for cpu_scale.
- */
-struct cpu_efficiency table_efficiency[] = {
-	{"arm,cortex-a15", 3891},
-	{"arm,cortex-a7",  2048},
-	{NULL, },
-};
-
-struct cpu_capacity {
-	unsigned long hwid;
-	unsigned long capacity;
-};
-
-struct cpu_capacity *cpu_capacity;
-
-unsigned long middle_capacity = 1;
-
-/*
- * Look for a customed capacity of a CPU in the cpu_capacity table during the
- * boot. The update of all CPUs is in O(n^2) for heteregeneous system but the
- * function returns directly for SMP system.
- */
-void update_cpu_power(unsigned int cpu, unsigned long hwid)
-{
-	unsigned int idx = 0;
-
-	/* look for the cpu's hwid in the cpu capacity table */
-	for (idx = 0; idx < num_possible_cpus(); idx++) {
-		if (cpu_capacity[idx].hwid == hwid)
-			break;
-
-		if (cpu_capacity[idx].hwid == -1)
-			return;
-	}
-
-	if (idx == num_possible_cpus())
-		return;
-
-	set_power_scale(cpu, cpu_capacity[idx].capacity / middle_capacity);
-
-	printk(KERN_INFO "CPU%u: update cpu_power %lu\n",
-		cpu, arch_scale_freq_power(NULL, cpu));
-}
-
-#else
-static inline void parse_dt_topology(void) {}
-static inline void update_cpu_power(unsigned int cpuid, unsigned int mpidr) {}
-#endif
-
-/*
- * cpu topology management
- */
 
 #define MPIDR_SMP_BITMASK (0x3 << 30)
 #define MPIDR_SMP_VALUE (0x2 << 30)
@@ -137,41 +41,11 @@ static inline void update_cpu_power(unsigned int cpuid, unsigned int mpidr) {}
 #define MPIDR_LEVEL2_MASK 0xFF
 #define MPIDR_LEVEL2_SHIFT 16
 
-/*
- * cpu topology table
- */
-
 struct cputopo_arm cpu_topology[NR_CPUS];
 
 const struct cpumask *cpu_coregroup_mask(int cpu)
 {
 	return &cpu_topology[cpu].core_sibling;
-}
-
-void update_siblings_masks(unsigned int cpuid)
-{
-	struct cputopo_arm *cpu_topo, *cpuid_topo = &cpu_topology[cpuid];
-	int cpu;
-
-	/* update core and thread sibling masks */
-	for_each_possible_cpu(cpu) {
-		cpu_topo = &cpu_topology[cpu];
-
-		if (cpuid_topo->socket_id != cpu_topo->socket_id)
-			continue;
-
-		cpumask_set_cpu(cpuid, &cpu_topo->core_sibling);
-		if (cpu != cpuid)
-			cpumask_set_cpu(cpu, &cpuid_topo->core_sibling);
-
-		if (cpuid_topo->core_id != cpu_topo->core_id)
-			continue;
-
-		cpumask_set_cpu(cpuid, &cpu_topo->thread_sibling);
-		if (cpu != cpuid)
-			cpumask_set_cpu(cpu, &cpuid_topo->thread_sibling);
-	}
-	smp_wmb();
 }
 
 /*
@@ -183,6 +57,7 @@ void store_cpu_topology(unsigned int cpuid)
 {
 	struct cputopo_arm *cpuid_topo = &cpu_topology[cpuid];
 	unsigned int mpidr;
+	unsigned int cpu;
 
 	/* If the cpu topology has been already set, just return */
 	if (cpuid_topo->core_id != -1)
@@ -224,7 +99,26 @@ void store_cpu_topology(unsigned int cpuid)
 		cpuid_topo->socket_id = -1;
 	}
 
-	update_siblings_masks(cpuid);
+	/* update core and thread sibling masks */
+	for_each_possible_cpu(cpu) {
+		struct cputopo_arm *cpu_topo = &cpu_topology[cpu];
+
+		if (cpuid_topo->socket_id == cpu_topo->socket_id) {
+			cpumask_set_cpu(cpuid, &cpu_topo->core_sibling);
+			if (cpu != cpuid)
+				cpumask_set_cpu(cpu,
+					&cpuid_topo->core_sibling);
+
+			if (cpuid_topo->core_id == cpu_topo->core_id) {
+				cpumask_set_cpu(cpuid,
+					&cpu_topo->thread_sibling);
+				if (cpu != cpuid)
+					cpumask_set_cpu(cpu,
+						&cpuid_topo->thread_sibling);
+			}
+		}
+	}
+	smp_wmb();
 
 	printk(KERN_INFO "CPU%u: thread %d, cpu %d, socket %d, mpidr %x\n",
 		cpuid, cpu_topology[cpuid].thread_id,
@@ -236,11 +130,11 @@ void store_cpu_topology(unsigned int cpuid)
  * init_cpu_topology is called at boot when only one cpu is running
  * which prevent simultaneous write access to cpu_topology array
  */
-void __init init_cpu_topology(void)
+void init_cpu_topology(void)
 {
 	unsigned int cpu;
 
-	/* init core mask and power */
+	/* init core mask */
 	for_each_possible_cpu(cpu) {
 		struct cputopo_arm *cpu_topo = &(cpu_topology[cpu]);
 
@@ -249,8 +143,6 @@ void __init init_cpu_topology(void)
 		cpu_topo->socket_id = -1;
 		cpumask_clear(&cpu_topo->core_sibling);
 		cpumask_clear(&cpu_topo->thread_sibling);
-
-		set_power_scale(cpu, SCHED_POWER_SCALE);
 	}
 	smp_wmb();
 }

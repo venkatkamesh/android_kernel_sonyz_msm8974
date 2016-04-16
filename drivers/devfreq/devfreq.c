@@ -122,18 +122,16 @@ static int devfreq_update_status(struct devfreq *devfreq, unsigned long freq)
 	if (lev < 0)
 		return lev;
 
-	devfreq->time_in_state[prev_lev] +=
+	cur_time = jiffies;
+	devfreq->time_in_state[lev] +=
 			 cur_time - devfreq->last_stat_updated;
 	devfreq->last_stat_updated = cur_time;
 
 	if (freq == devfreq->previous_freq)
 		return 0;
 
-
-	cur_time = jiffies;
-
 	prev_lev = devfreq_get_freq_level(devfreq, devfreq->previous_freq);
-	if (prev_lev < 0) 
+	if (prev_lev < 0)
 		return 0;
 
 	if (lev != prev_lev) {
@@ -937,14 +935,30 @@ static ssize_t show_available_freqs(struct device *d,
 				    char *buf)
 {
 	struct devfreq *df = to_devfreq(d);
-	int index, num_chars = 0;
+	struct device *dev = df->dev.parent;
+	struct opp *opp;
+	ssize_t count = 0;
+	unsigned long freq = 0;
 
-	for (index = 0; index < df->profile->max_state; index++)
-		num_chars += snprintf(buf + num_chars, PAGE_SIZE, "%d ",
-		df->profile->freq_table[index]);
-	buf[num_chars++] = '\n';
+	rcu_read_lock();
+	do {
+		opp = opp_find_freq_ceil(dev, &freq);
+		if (IS_ERR(opp))
+			break;
 
-	return num_chars;
+		count += scnprintf(&buf[count], (PAGE_SIZE - count - 2),
+				   "%lu ", freq);
+		freq++;
+	} while (1);
+	rcu_read_unlock();
+
+	/* Truncate the trailing space */
+	if (count)
+		count--;
+
+	count += sprintf(&buf[count], "\n");
+
+	return count;
 }
 
 static ssize_t show_trans_table(struct device *dev, struct device_attribute *attr,
@@ -1010,10 +1024,7 @@ static int __init devfreq_init(void)
 		return PTR_ERR(devfreq_class);
 	}
 
-	devfreq_wq =
-	    alloc_workqueue("devfreq_wq",
-			    WQ_HIGHPRI | WQ_UNBOUND | WQ_FREEZABLE |
-			    WQ_MEM_RECLAIM, 0);
+	devfreq_wq = create_freezable_workqueue("devfreq_wq");
 	if (IS_ERR(devfreq_wq)) {
 		class_destroy(devfreq_class);
 		pr_err("%s: couldn't create workqueue\n", __FILE__);

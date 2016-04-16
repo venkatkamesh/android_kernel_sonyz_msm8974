@@ -288,7 +288,6 @@ config ARCH_MSM8974
 	select KRAIT_REGULATOR
 	select ENABLE_VMALLOC_SAVINGS
 	select HAVE_NMI_WATCHDOG if MSM_WATCHDOG_V2
-	select HAS_MACH_MEMUTILS
 
 config ARCH_APQ8084
 	bool "APQ8084"
@@ -1897,14 +1896,6 @@ config MSM_DALRPC_TEST
 	help
 	  Exercises DAL RPC calls to QDSP6.
 
-config MSM_MPDEC
-	bool "Enable kernel based mpdecision"
-	depends on MSM_SMP
-	default n
-	help
-	  This enables kernel based multi core control.
-	  (up/down hotplug based on load)
-
 if CPU_FREQ_MSM
 
 config MSM_CPU_FREQ_SET_MIN_MAX
@@ -1924,30 +1915,6 @@ config MSM_CPU_FREQ_MIN
 	depends on MSM_CPU_FREQ_SET_MIN_MAX
 	default 245760
 
-config MSM_CPUFREQ_LIMITER
-	tristate "MSM CPU frequency limiter"
-	default n
-	help
-	  This driver limits MSM CPU frequency through sysfs file system.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called cpufreq_stats.
-
-	  If in doubt, say N.
-
-config CPU_OC
-	bool "allow 2.3 GHz OC bin"
-	default n
-	help
-	  Unlock the CPU Overclock freq speed @ 2.3 GHz
-
-config OC_ULTIMATE
-	bool "allow 2.419 GHz max OC option"
-	depends on CPU_OC
-	default n
-	help
-	  Unlock the ultimate Overclock freq speed @ 2.419 GHz
-
 endif # CPU_FREQ_MSM
 
 config MSM_DEVFREQ_CPUBW
@@ -1963,20 +1930,6 @@ config MSM_DEVFREQ_CPUBW
 	  DDR IB/AB bandwidth votes. This driver provides a SoC topology
 	  agnostic interface to so that some of the devfreq governors can be
 	  shared across SoCs.
-
-config TURBO_BOOST
-	bool "Enable CPU Turbo boost option"
-	default y
-	help
-	  This option allows overclocking of 2 cores to higher clock rate
-	  than stock maximum.  When more than 2 cores are active, the clock
-	  is limited to stock max speeds
-
-config CPU_VOLTAGE_TABLE
-	bool "Enable CPU Voltage Table via sysfs for adjustements"
-	default n
-	help
-	  DTS based kernel User Votlage Control
 
 config MSM_AVS_HW
 	bool "Enable Adaptive Voltage Scaling (AVS)"
@@ -2581,20 +2534,6 @@ config MSM_RUN_QUEUE_STATS
          in user mode, called MPDecision will be using this data to decide
          on when to switch off/on the other cores.
 
-config MSM_RUN_QUEUE_STATS_USE_CPU_UTIL
-	bool "Enable collection and exporting of MSM Run Queue stats to userspace"
-	depends on (MSM_RUN_QUEUE_STATS)
-	help
-	 This option enable cpu utilization
-
-config MSM_RUN_QUEUE_STATS_BE_CONSERVATIVE
-	bool "Use a more conservative computation for RQ Stats"
-	depends on MSM_RUN_QUEUE_STATS
-	default y
-	help
-	  Enable more conservative computation of load and size of the run
-	  queue.
-
 config MSM_STANDALONE_POWER_COLLAPSE
        bool "Enable standalone power collapse"
        default n
@@ -3151,25 +3090,6 @@ config WALL_CLK_SYSFS
 	help
 	 Support the wallclk directory in sysfs filesystem to enable the
 	 wall clock simulation and read the current SFN.
- 
-config FORCE_FAST_CHARGE
-	bool "Force AC charge mode at will"
-	default y
-	help
-	  A simple sysfs interface to force adapters that
-	  are detected as USB to charge as AC.
-
-config MSM_SLEEPER
-	bool "Limit max frequency while screen is off"
-	default y
-	help
-	  Limit max frequency while screen is off 
-
-config HAS_MACH_MEMUTILS
-	default n
-	bool "Motorola MSM memcpy enhancements"
-	help
-	Faster memcpy performance for Krait
 
 config KRAIT_REGULATOR
 	bool "Support Kraits powered via ganged regulators in the pmic"
