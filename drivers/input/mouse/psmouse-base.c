@@ -821,20 +821,20 @@ static int psmouse_extensions(struct psmouse *psmouse,
 /*
  * Try Finger Sensing Pad. We do it here because its probe upsets
  * Trackpoint devices (causing TP_READ_ID command to time out).
- */
-	if (max_proto > PSMOUSE_IMEX) {
-		if (psmouse_do_detect(fsp_detect,
-				      psmouse, set_properties) == 0) {
-			if (!set_properties || fsp_init(psmouse) == 0)
-				return PSMOUSE_FSP;
-/*
+ *
+ *	if (max_proto > PSMOUSE_IMEX) {
+ *		if (psmouse_do_detect(fsp_detect,
+ *				      psmouse, set_properties) == 0) {
+ *			if (!set_properties || fsp_init(psmouse) == 0)
+ *				return PSMOUSE_FSP;
+ *
  * Init failed, try basic relative protocols
- */
-			max_proto = PSMOUSE_IMEX;
-		}
-	}
-
-/*
+ *
+ *			max_proto = PSMOUSE_IMEX;
+ *		}
+ *	}
+ *
+ *
  * Reset to defaults in case the device got confused by extended
  * protocol probes. Note that we follow up with full reset because
  * some mice put themselves to sleep when they see PSMOUSE_RESET_DIS.
@@ -985,13 +985,14 @@ static const struct psmouse_protocol psmouse_protocols[] = {
 	},
 #endif
 #ifdef CONFIG_MOUSE_PS2_SENTELIC
-	{
-		.type		= PSMOUSE_FSP,
-		.name		= "FSPPS/2",
-		.alias		= "fsp",
-		.detect		= fsp_detect,
-		.init		= fsp_init,
-	},
+/*
+ *	{
+ *		.type		= PSMOUSE_FSP,
+ *		.name		= "FSPPS/2",
+ *		.alias		= "fsp",
+ *		.detect		= fsp_detect,
+ *		.init		= fsp_init,
+ */	},
 #endif
 	{
 		.type		= PSMOUSE_CORTRON,
